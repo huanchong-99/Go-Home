@@ -51,23 +51,45 @@ class FlightRouteSearcher:
     def __init__(self, headless=True):
         """
         初始化浏览器
-        
+
         Args:
             headless: 是否使用无头模式
         """
         if not DRISSION_PAGE_AVAILABLE:
             raise ImportError("DrissionPage库未安装，无法使用航班路线查询功能")
-        
+
         self.base_url = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
-        
+
+        # 配置浏览器选项，增强反检测能力
+        co = ChromiumOptions()
+
+        # 设置真实的 User-Agent（模拟 Chrome 浏览器）
+        co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+        # 设置窗口大小（避免被检测为无头浏览器）
+        co.set_argument('--window-size=1920,1080')
+
+        # 禁用自动化检测标志
+        co.set_argument('--disable-blink-features=AutomationControlled')
+
+        # 禁用沙盒模式（提高兼容性）
+        co.set_argument('--no-sandbox')
+
+        # 禁用开发者扩展
+        co.set_argument('--disable-extensions')
+
+        # 禁用GPU（无头模式下更稳定）
+        co.set_argument('--disable-gpu')
+
+        # 设置语言为中文
+        co.set_argument('--lang=zh-CN')
+
         if headless:
-            co = ChromiumOptions()
             co.headless()
-            self.page = ChromiumPage(co)
-        else:
-            self.page = ChromiumPage()
-        
-        logger.info("航班路线查询器初始化完成")
+
+        self.page = ChromiumPage(co)
+
+        logger.info("航班路线查询器初始化完成（已启用反检测配置）")
     
     def search_flights(self, departure_city: str, destination_city: str, departure_date: str) -> List[Dict[str, Any]]:
         """
