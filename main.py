@@ -10,7 +10,7 @@ import asyncio
 import json
 import os
 import queue
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from openai import OpenAI
 from mcp import ClientSession, StdioServerParameters
@@ -368,6 +368,9 @@ class GoHomeApp(ctk.CTk):
         self.geometry(window_size)
         self.minsize(1000, 700)
 
+        # 查询状态
+        self.is_querying = False
+
         # 创建 UI
         self.create_ui()
 
@@ -534,18 +537,6 @@ class GoHomeApp(ctk.CTk):
         )
         self.save_config_btn.grid(row=7, column=0, padx=10, pady=10, sticky="ew")
 
-        # 连接测试按钮
-        self.test_api_btn = ctk.CTkButton(
-            self.api_frame,
-            text="🔗 测试连接",
-            command=self.test_api_connection,
-            height=35,
-            fg_color="transparent",
-            border_width=2,
-            text_color=("gray10", "gray90")
-        )
-        self.test_api_btn.grid(row=8, column=0, padx=10, pady=(0, 10), sticky="ew")
-
         # 主题切换
         self.theme_label = ctk.CTkLabel(self.sidebar, text="主题:", anchor="w")
         self.theme_label.grid(row=11, column=0, padx=20, pady=(10, 0), sticky="w")
@@ -563,8 +554,9 @@ class GoHomeApp(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.main_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=3)  # 对话区占更多空间
-        self.main_frame.grid_rowconfigure(2, weight=1)  # 日志区
+        self.main_frame.grid_rowconfigure(1, weight=1)  # 查询选项区
+        self.main_frame.grid_rowconfigure(2, weight=3)  # 结果区
+        self.main_frame.grid_rowconfigure(3, weight=1)  # 日志区
 
         # 标题区
         self.title_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -572,7 +564,7 @@ class GoHomeApp(ctk.CTk):
 
         self.main_title = ctk.CTkLabel(
             self.title_frame,
-            text="🤖 AI 智能助手",
+            text="🚄 回家路线查询",
             font=ctk.CTkFont(size=24, weight="bold")
         )
         self.main_title.pack(side="left")
@@ -586,8 +578,11 @@ class GoHomeApp(ctk.CTk):
         self.time_label.pack(side="right")
         self.update_time()
 
-        # 对话区域
-        self.create_chat_area()
+        # 查询选项区域
+        self.create_query_options()
+
+        # 结果展示区域
+        self.create_result_area()
 
         # 日志区域
         self.create_log_area()
@@ -596,83 +591,136 @@ class GoHomeApp(ctk.CTk):
         self.log_message("=" * 50)
         self.log_message("Go-home - 回家最优路线查询系统")
         self.log_message("=" * 50)
-        self.log_message(f"Python: {PYTHON_EXE}")
-        self.log_message(f"Node.js: {NODE_EXE}")
-        self.log_message("-" * 50)
-        self.log_message("请先启动 MCP 服务，然后配置 AI API")
+        self.log_message("请先启动 MCP 服务，然后填写查询选项开始查询")
 
-    def create_chat_area(self):
-        """创建对话区域"""
-        self.chat_frame = ctk.CTkFrame(self.main_frame)
-        self.chat_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
-        self.chat_frame.grid_columnconfigure(0, weight=1)
-        self.chat_frame.grid_rowconfigure(1, weight=1)
+    def create_query_options(self):
+        """创建查询选项区域"""
+        self.query_frame = ctk.CTkFrame(self.main_frame)
+        self.query_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+        self.query_frame.grid_columnconfigure((0, 1), weight=1)
 
-        # 对话标题
-        self.chat_title = ctk.CTkLabel(
-            self.chat_frame,
-            text="💬 对话",
+        # 查询选项标题
+        self.query_title = ctk.CTkLabel(
+            self.query_frame,
+            text="📝 查询选项",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.chat_title.grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
+        self.query_title.grid(row=0, column=0, columnspan=2, padx=15, pady=(15, 10), sticky="w")
 
-        # 对话历史显示
-        self.chat_history = ctk.CTkTextbox(
-            self.chat_frame,
-            font=ctk.CTkFont(family="Microsoft YaHei", size=13),
-            wrap="word",
-            state="disabled"
+        # 左侧：基本信息
+        left_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
+        left_frame.grid(row=1, column=0, padx=15, pady=5, sticky="nsew")
+
+        # 出发地
+        ctk.CTkLabel(left_frame, text="出发城市:", font=ctk.CTkFont(size=13)).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.from_city_entry = ctk.CTkEntry(left_frame, placeholder_text="例如：北京", width=200)
+        self.from_city_entry.grid(row=0, column=1, padx=(10, 0), pady=(0, 5), sticky="w")
+
+        # 目的地
+        ctk.CTkLabel(left_frame, text="目的城市:", font=ctk.CTkFont(size=13)).grid(row=1, column=0, sticky="w", pady=5)
+        self.to_city_entry = ctk.CTkEntry(left_frame, placeholder_text="例如：上海", width=200)
+        self.to_city_entry.grid(row=1, column=1, padx=(10, 0), pady=5, sticky="w")
+
+        # 出发日期
+        ctk.CTkLabel(left_frame, text="出发日期:", font=ctk.CTkFont(size=13)).grid(row=2, column=0, sticky="w", pady=5)
+        date_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
+        date_frame.grid(row=2, column=1, padx=(10, 0), pady=5, sticky="w")
+
+        # 默认日期为明天
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        self.date_entry = ctk.CTkEntry(date_frame, placeholder_text="YYYY-MM-DD", width=150)
+        self.date_entry.insert(0, tomorrow)
+        self.date_entry.grid(row=0, column=0)
+
+        # 右侧：偏好设置
+        right_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
+        right_frame.grid(row=1, column=1, padx=15, pady=5, sticky="nsew")
+
+        # 优先策略
+        ctk.CTkLabel(right_frame, text="优先策略:", font=ctk.CTkFont(size=13)).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.priority_var = ctk.StringVar(value="balanced")
+        priority_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
+        priority_frame.grid(row=0, column=1, padx=(10, 0), pady=(0, 5), sticky="w")
+        ctk.CTkRadioButton(priority_frame, text="💰 省钱", variable=self.priority_var, value="cheap", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(priority_frame, text="⏱️ 省时", variable=self.priority_var, value="fast", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(priority_frame, text="⚖️ 均衡", variable=self.priority_var, value="balanced", font=ctk.CTkFont(size=12)).pack(side="left")
+
+        # 交通方式
+        ctk.CTkLabel(right_frame, text="交通方式:", font=ctk.CTkFont(size=13)).grid(row=1, column=0, sticky="w", pady=5)
+        self.transport_var = ctk.StringVar(value="all")
+        transport_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
+        transport_frame.grid(row=1, column=1, padx=(10, 0), pady=5, sticky="w")
+        ctk.CTkRadioButton(transport_frame, text="✈️ 飞机", variable=self.transport_var, value="flight", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(transport_frame, text="🚄 火车", variable=self.transport_var, value="train", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(transport_frame, text="🔄 不限", variable=self.transport_var, value="all", font=ctk.CTkFont(size=12)).pack(side="left")
+
+        # 行程时长接受度
+        ctk.CTkLabel(right_frame, text="行程时长:", font=ctk.CTkFont(size=13)).grid(row=2, column=0, sticky="w", pady=5)
+        self.duration_var = ctk.StringVar(value="normal")
+        duration_frame = ctk.CTkFrame(right_frame, fg_color="transparent")
+        duration_frame.grid(row=2, column=1, padx=(10, 0), pady=5, sticky="w")
+        ctk.CTkRadioButton(duration_frame, text="⚡ 当天到", variable=self.duration_var, value="same_day", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(duration_frame, text="📅 可隔天", variable=self.duration_var, value="normal", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(duration_frame, text="🕐 接受长途", variable=self.duration_var, value="long", font=ctk.CTkFont(size=12)).pack(side="left")
+
+        # 查询按钮
+        btn_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, columnspan=2, padx=15, pady=(10, 15))
+
+        self.query_btn = ctk.CTkButton(
+            btn_frame,
+            text="🔍 开始查询",
+            command=self.start_query,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            width=200,
+            height=45
         )
-        self.chat_history.grid(row=1, column=0, padx=15, pady=(5, 10), sticky="nsew")
+        self.query_btn.pack(side="left", padx=10)
 
-        # 输入区域框架
-        self.input_frame = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
-        self.input_frame.grid(row=2, column=0, padx=15, pady=(0, 15), sticky="ew")
-        self.input_frame.grid_columnconfigure(0, weight=1)
-
-        # 输入框
-        self.chat_input = ctk.CTkEntry(
-            self.input_frame,
-            placeholder_text="输入你的问题，例如：查询明天从北京到上海的机票和火车票...",
-            font=ctk.CTkFont(size=13),
-            height=40
-        )
-        self.chat_input.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.chat_input.bind("<Return>", self.on_send_message)
-
-        # 发送按钮
-        self.send_btn = ctk.CTkButton(
-            self.input_frame,
-            text="发送",
-            command=self.send_message,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            width=80,
-            height=40
-        )
-        self.send_btn.grid(row=0, column=1)
-
-        # 清空对话按钮
-        self.clear_chat_btn = ctk.CTkButton(
-            self.input_frame,
-            text="清空",
-            command=self.clear_chat,
+        self.clear_btn = ctk.CTkButton(
+            btn_frame,
+            text="🗑️ 清空结果",
+            command=self.clear_results,
             font=ctk.CTkFont(size=14),
-            width=60,
-            height=40,
+            width=120,
+            height=45,
             fg_color="transparent",
             border_width=2,
             text_color=("gray10", "gray90")
         )
-        self.clear_chat_btn.grid(row=0, column=2, padx=(10, 0))
+        self.clear_btn.pack(side="left", padx=10)
 
-        # 初始化对话历史
-        self.conversation_history: List[Dict[str, str]] = []
-        self.add_chat_message("assistant", "你好！我是 Go-home 智能助手 🏠\n\n我可以帮你查询机票和火车票信息，找到回家的最优路线。\n\n请先：\n1. 点击左侧 [一键启动服务] 启动 MCP 服务\n2. 配置 AI API 并保存\n3. 然后就可以开始对话了！\n\n示例问题：\n• 查询明天从北京到上海的机票\n• 帮我看看后天广州到武汉的高铁票\n• 我想从深圳回成都，有什么交通方案？")
+    def create_result_area(self):
+        """创建结果展示区域"""
+        self.result_frame = ctk.CTkFrame(self.main_frame)
+        self.result_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
+        self.result_frame.grid_columnconfigure(0, weight=1)
+        self.result_frame.grid_rowconfigure(1, weight=1)
+
+        # 结果标题
+        self.result_title = ctk.CTkLabel(
+            self.result_frame,
+            text="📋 推荐方案",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.result_title.grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
+
+        # 结果显示区
+        self.result_textbox = ctk.CTkTextbox(
+            self.result_frame,
+            font=ctk.CTkFont(family="Microsoft YaHei", size=13),
+            wrap="word",
+            state="disabled"
+        )
+        self.result_textbox.grid(row=1, column=0, padx=15, pady=(5, 15), sticky="nsew")
+
+        # 初始提示
+        self.show_result("欢迎使用 Go-home 回家路线查询系统！\n\n请按以下步骤操作：\n1. 点击左侧「一键启动服务」启动 MCP 服务\n2. 配置 AI API 并保存\n3. 填写出发地、目的地、日期\n4. 选择您的偏好（省钱/省时/交通方式等）\n5. 点击「开始查询」\n\n系统将为您智能推荐最优的回家路线！")
 
     def create_log_area(self):
         """创建日志区域"""
         self.log_frame = ctk.CTkFrame(self.main_frame)
-        self.log_frame.grid(row=2, column=0, sticky="nsew")
+        self.log_frame.grid(row=3, column=0, sticky="nsew")
         self.log_frame.grid_columnconfigure(0, weight=1)
         self.log_frame.grid_rowconfigure(1, weight=1)
 
@@ -687,7 +735,7 @@ class GoHomeApp(ctk.CTk):
             self.log_frame,
             font=ctk.CTkFont(family="Consolas", size=11),
             wrap="word",
-            height=120
+            height=100
         )
         self.log_textbox.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="nsew")
 
@@ -697,52 +745,122 @@ class GoHomeApp(ctk.CTk):
         self.log_textbox.insert("end", f"[{timestamp}] {message}\n")
         self.log_textbox.see("end")
 
-    def add_chat_message(self, role: str, content: str):
-        """添加对话消息到显示区"""
-        self.chat_history.configure(state="normal")
+    def show_result(self, content: str):
+        """显示结果"""
+        self.result_textbox.configure(state="normal")
+        self.result_textbox.delete("1.0", "end")
+        self.result_textbox.insert("1.0", content)
+        self.result_textbox.configure(state="disabled")
 
-        if role == "user":
-            prefix = "👤 你：\n"
-            self.chat_history.insert("end", prefix, "user_prefix")
-        else:
-            prefix = "🤖 助手：\n"
-            self.chat_history.insert("end", prefix, "assistant_prefix")
+    def append_result(self, content: str):
+        """追加结果"""
+        self.result_textbox.configure(state="normal")
+        self.result_textbox.insert("end", content)
+        self.result_textbox.configure(state="disabled")
+        self.result_textbox.see("end")
 
-        self.chat_history.insert("end", f"{content}\n\n")
-        self.chat_history.configure(state="disabled")
-        self.chat_history.see("end")
+    def clear_results(self):
+        """清空结果"""
+        self.show_result("结果已清空，请开始新的查询。")
+        self.log_message("结果已清空")
 
-    def on_send_message(self, event=None):
-        """回车键发送消息"""
-        self.send_message()
+    def update_time(self):
+        """更新时间显示"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.time_label.configure(text=current_time)
+        self.after(1000, self.update_time)
 
-    def send_message(self):
-        """发送消息并获取 AI 回复"""
-        message = self.chat_input.get().strip()
-        if not message:
+    def build_system_prompt(self) -> str:
+        """根据用户选项构建系统提示词"""
+        priority = self.priority_var.get()
+        transport = self.transport_var.get()
+        duration = self.duration_var.get()
+
+        priority_text = {
+            "cheap": "用户更看重价格，请优先推荐价格最低的方案，即使需要多花一些时间。",
+            "fast": "用户更看重时间，请优先推荐最快到达的方案，价格可以适当高一些。",
+            "balanced": "用户希望在价格和时间之间取得平衡，请综合考虑推荐性价比最高的方案。"
+        }[priority]
+
+        transport_text = {
+            "flight": "用户只考虑飞机出行，请只查询和推荐航班信息。",
+            "train": "用户只考虑火车出行，请只查询和推荐火车票信息（高铁、动车、普通列车等）。",
+            "all": "用户对交通方式没有限制，请同时查询飞机和火车，比较后给出最佳推荐。"
+        }[transport]
+
+        duration_text = {
+            "same_day": "用户希望当天到达目的地，请只推荐出发当天能够到达的方案，不要推荐需要过夜或次日到达的行程。",
+            "normal": "用户可以接受隔天到达（24小时内），但不希望行程过长。",
+            "long": "用户可以接受长途行程，即使需要超过24小时也可以接受，包括中转、换乘等复杂方案。"
+        }[duration]
+
+        return f"""你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
+
+【用户偏好】
+{priority_text}
+{transport_text}
+{duration_text}
+
+【工具使用说明】
+1. 查询火车票时，需要先使用 train_get-station-code-of-citys 获取城市的 station_code，再用于查询
+2. 查询机票时，城市名需要使用中文
+3. 日期格式为 yyyy-MM-dd
+
+【输出要求】
+1. 根据查询结果，整理出清晰的票务信息
+2. 按照用户偏好排序推荐方案
+3. 给出具体的推荐理由
+4. 列出每个方案的关键信息：出发时间、到达时间、历时、价格
+5. 使用友好的中文回复，格式清晰易读
+6. 如果有多个好的选择，最多推荐3个最佳方案"""
+
+    def start_query(self):
+        """开始查询"""
+        # 验证输入
+        from_city = self.from_city_entry.get().strip()
+        to_city = self.to_city_entry.get().strip()
+        date = self.date_entry.get().strip()
+
+        if not from_city:
+            self.show_result("⚠️ 请输入出发城市")
+            return
+        if not to_city:
+            self.show_result("⚠️ 请输入目的城市")
+            return
+        if not date:
+            self.show_result("⚠️ 请输入出发日期")
             return
 
         # 检查 API 配置
         api_key = self.api_key_entry.get()
         if not api_key:
-            self.add_chat_message("assistant", "⚠️ 请先在左侧配置 AI API Key，然后点击保存配置。")
+            self.show_result("⚠️ 请先在左侧配置 AI API Key，然后点击保存配置。")
             return
 
-        # 清空输入框
-        self.chat_input.delete(0, "end")
+        # 检查 MCP 服务
+        transport = self.transport_var.get()
+        if transport == "flight" and not self.mcp_manager.flight_running:
+            self.show_result("⚠️ 机票服务未启动，请先点击「一键启动服务」")
+            return
+        if transport == "train" and not self.mcp_manager.train_running:
+            self.show_result("⚠️ 火车票服务未启动，请先点击「一键启动服务」")
+            return
+        if transport == "all" and not (self.mcp_manager.flight_running or self.mcp_manager.train_running):
+            self.show_result("⚠️ MCP 服务未启动，请先点击「一键启动服务」")
+            return
 
-        # 显示用户消息
-        self.add_chat_message("user", message)
+        # 禁用查询按钮
+        self.query_btn.configure(state="disabled", text="⏳ 查询中...")
+        self.is_querying = True
 
-        # 添加到对话历史
-        self.conversation_history.append({"role": "user", "content": message})
+        # 构建查询消息
+        user_message = f"请帮我查询 {date} 从 {from_city} 到 {to_city} 的出行方案。"
 
-        # 禁用发送按钮
-        self.send_btn.configure(state="disabled", text="思考中...")
-        self.log_message(f"[AI] 用户问题: {message[:50]}...")
+        self.show_result(f"🔍 正在查询 {from_city} → {to_city} ({date}) 的出行方案...\n\n请稍候，AI 正在为您分析最优路线...")
+        self.log_message(f"[查询] {from_city} → {to_city}, 日期: {date}")
 
         # 异步调用 AI
-        thread = threading.Thread(target=self.call_ai_api, args=(message,), daemon=True)
+        thread = threading.Thread(target=self.call_ai_api, args=(user_message,), daemon=True)
         thread.start()
 
     def call_ai_api(self, user_message: str):
@@ -751,35 +869,34 @@ class GoHomeApp(ctk.CTk):
         base_url = self.api_url_entry.get()
         model = self.model_combobox.get()
 
-        # 系统提示词
-        system_prompt = """你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
-
-你可以使用可用的 MCP 工具来查询实时的机票和火车票信息。
-
-使用工具时的注意事项：
-1. 查询火车票时，需要先使用 train_get-station-code-of-citys 获取城市的 station_code，再用于查询
-2. 查询机票时，城市名需要使用中文
-3. 日期格式为 yyyy-MM-dd，如需获取当前日期可调用相应工具
-4. 请根据查询结果为用户整理出清晰的票务信息和出行建议
-
-请用友好的中文回复用户，并给出具体的票务信息和推荐方案。"""
+        # 构建系统提示词
+        system_prompt = self.build_system_prompt()
 
         try:
             client = OpenAI(api_key=api_key, base_url=base_url)
 
-            messages = [{"role": "system", "content": system_prompt}]
-            # 只保留最近10轮对话
-            messages.extend(self.conversation_history[-20:])
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ]
 
             # 获取可用的 MCP 工具
             tools = self.mcp_manager.get_all_tools()
+
+            # 根据用户选择过滤工具
+            transport = self.transport_var.get()
+            if transport == "flight":
+                tools = [t for t in tools if t["function"]["name"].startswith("flight_")]
+            elif transport == "train":
+                tools = [t for t in tools if t["function"]["name"].startswith("train_")]
+
             has_tools = len(tools) > 0
 
             if has_tools:
                 self.after(0, lambda: self.log_message(f"[AI] 可用工具数量: {len(tools)}"))
 
             # 循环处理，直到 AI 不再调用工具
-            max_iterations = 10  # 防止无限循环
+            max_iterations = 10
             iteration = 0
 
             while iteration < max_iterations:
@@ -847,51 +964,33 @@ class GoHomeApp(ctk.CTk):
                     # 没有工具调用，获取最终回复
                     final_content = assistant_message.content or "抱歉，我无法生成回复。"
 
-                    # 添加到对话历史
-                    self.conversation_history.append({"role": "assistant", "content": final_content})
-
                     # 在主线程更新 UI
-                    self.after(0, lambda msg=final_content: self.add_chat_message("assistant", msg))
-                    self.after(0, lambda: self.log_message("[AI] 回复已生成"))
+                    self.after(0, lambda msg=final_content: self.show_result(msg))
+                    self.after(0, lambda: self.log_message("[AI] 查询完成"))
                     break
 
             else:
                 # 达到最大迭代次数
-                self.after(0, lambda: self.add_chat_message("assistant", "⚠️ 处理请求时超过了最大工具调用次数，请尝试简化您的问题。"))
+                self.after(0, lambda: self.show_result("⚠️ 处理请求时超过了最大工具调用次数，请尝试简化您的问题。"))
                 self.after(0, lambda: self.log_message("[AI] 超过最大工具调用次数"))
 
         except Exception as e:
             error_str = str(e)
-            # 检查是否是 thinking 模型的特殊错误
             if "thought_signature" in error_str:
-                error_msg = "AI 请求失败: 模型限制\n\n当前使用的是 thinking 类型模型，该类型模型在多轮工具调用时需要特殊处理。\n\n解决方案：请在 API 设置中选择一个非 thinking 的普通模型"
+                error_msg = "⚠️ AI 请求失败: 模型限制\n\n当前使用的是 thinking 类型模型，该类型模型在多轮工具调用时需要特殊处理。\n\n解决方案：请在 API 设置中选择一个非 thinking 的普通模型"
             else:
-                error_msg = f"AI 请求失败: {error_str}\n\n请检查：\n1. API Key 是否正确\n2. API Base URL 是否正确\n3. 网络连接是否正常\n4. MCP 服务是否已启动"
-            self.after(0, lambda msg=error_msg: self.add_chat_message("assistant", msg))
+                error_msg = f"⚠️ AI 请求失败: {error_str}\n\n请检查：\n1. API Key 是否正确\n2. API Base URL 是否正确\n3. 网络连接是否正常\n4. MCP 服务是否已启动"
+            self.after(0, lambda msg=error_msg: self.show_result(msg))
             self.after(0, lambda err=error_str: self.log_message(f"[AI] 错误: {err}"))
 
         finally:
-            # 恢复发送按钮
-            self.after(0, lambda: self.send_btn.configure(state="normal", text="发送"))
-
-    def clear_chat(self):
-        """清空对话"""
-        self.chat_history.configure(state="normal")
-        self.chat_history.delete("1.0", "end")
-        self.chat_history.configure(state="disabled")
-        self.conversation_history.clear()
-        self.add_chat_message("assistant", "对话已清空。有什么可以帮你的吗？")
-        self.log_message("[AI] 对话历史已清空")
-
-    def update_time(self):
-        """更新时间显示"""
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.time_label.configure(text=current_time)
-        self.after(1000, self.update_time)
+            # 恢复查询按钮
+            self.after(0, lambda: self.query_btn.configure(state="normal", text="🔍 开始查询"))
+            self.is_querying = False
 
     def start_all_services(self):
         """一键启动所有服务"""
-        self.log_message("-" * 60)
+        self.log_message("-" * 50)
         self.log_message("正在启动 MCP 服务...")
 
         def start_services():
@@ -914,7 +1013,7 @@ class GoHomeApp(ctk.CTk):
 
     def stop_all_services(self):
         """停止所有服务"""
-        self.log_message("-" * 60)
+        self.log_message("-" * 50)
         self.log_message("正在停止 MCP 服务...")
         self.mcp_manager.stop_all(self.log_message)
         self.flight_status.configure(text_color="gray")
@@ -973,34 +1072,6 @@ class GoHomeApp(ctk.CTk):
                 self.after(0, lambda: self.fetch_models_btn.configure(state="normal"))
 
         thread = threading.Thread(target=fetch_models, daemon=True)
-        thread.start()
-
-    def test_api_connection(self):
-        """测试 API 连接"""
-        api_key = self.api_key_entry.get()
-        base_url = self.api_url_entry.get()
-        model = self.model_combobox.get()
-
-        if not api_key:
-            self.log_message("[错误] 请先填写 API Key")
-            return
-
-        self.log_message(f"正在测试 API 连接: {base_url}")
-
-        def test_connection():
-            try:
-                client = OpenAI(api_key=api_key, base_url=base_url)
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": "Hello"}],
-                    max_tokens=10
-                )
-                self.after(0, lambda: self.log_message(f"[成功] API 连接成功！模型: {model}"))
-                self.openai_client = client
-            except Exception as e:
-                self.after(0, lambda: self.log_message(f"[失败] API 连接失败: {str(e)}"))
-
-        thread = threading.Thread(target=test_connection, daemon=True)
         thread.start()
 
     def change_theme(self, theme: str):
