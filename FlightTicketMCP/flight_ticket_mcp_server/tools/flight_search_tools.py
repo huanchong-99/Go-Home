@@ -133,7 +133,7 @@ class FlightRouteSearcher:
 
     def _intelligent_scroll_for_content(self):
         """智能滚动以加载更多航班内容"""
-        print("🔄 智能滚动加载航班内容...")
+        logger.debug("智能滚动加载航班内容...")
 
         try:
             # 先向下滚动几次，加载初始内容
@@ -141,62 +141,62 @@ class FlightRouteSearcher:
 
             for i, distance in enumerate(scroll_distances, 1):
                 self.page.scroll(distance)
-                print(f"📜 第{i}次向下滚动 {distance}px")
+                logger.debug(f"第{i}次向下滚动 {distance}px")
                 time.sleep(1.5)  # 等待内容加载
 
                 # 检查是否有新的航班元素加载出来
                 flight_elements = self.page.eles('css:.flight-item', timeout=1)
-                print(f"   当前页面航班元素数量：{len(flight_elements)}")
+                logger.debug(f"当前页面航班元素数量：{len(flight_elements)}")
 
             # 滚动回到顶部，确保能看到所有航班
-            print("🔝 滚动回到页面顶部")
+            logger.debug("滚动回到页面顶部")
             self.page.scroll(-2000)  # 向上滚动回到顶部
             time.sleep(1)
 
         except Exception as e:
-            print(f"⚠️ 智能滚动过程中出错：{e}")
+            logger.warning(f"智能滚动过程中出错：{e}")
     def _wait_for_flight_content(self, timeout=30):
         """等待航班内容加载"""
-        print("⏳ 等待航班内容加载...")
+        logger.debug("等待航班内容加载...")
 
         # 方法1：等待航班容器出现
         flight_container = self.page.ele('css:.body-wrapper', timeout=timeout)
         if flight_container:
-            print("✅ 找到航班容器")
+            logger.debug("找到航班容器")
 
             # 方法2：等待航班列表出现
             flight_items = self.page.ele('css:.flight-item', timeout=10)
             if flight_items:
-                print("✅ 航班列表加载完成")
+                logger.debug("航班列表加载完成")
             else:
-                print("⚠️ 等待航班列表超时，尝试其他解析方法...")
+                logger.debug("等待航班列表超时，尝试其他解析方法...")
 
                 # 等待可能的加载指示器消失
                 self._wait_for_loading_complete()
         else:
-            print("❌ 航班容器未找到")
+            logger.warning("航班容器未找到")
     def _wait_for_page_ready(self, timeout=30):
         """智能等待页面完全加载"""
-        print("⏳ 等待页面完全加载...")
+        logger.debug("等待页面完全加载...")
 
         # 方法1：等待 document.readyState 为 complete
         start_time = time.time()
         while time.time() - start_time < timeout:
             ready_state = self.page.run_js("return document.readyState")
             if ready_state == "complete":
-                print("✅ 页面DOM加载完成")
+                logger.debug("页面DOM加载完成")
                 break
             time.sleep(0.5)
         else:
-            print("⚠️ 页面加载超时，继续执行...")
+            logger.debug("页面加载超时，继续执行...")
 
         # 方法2：等待jQuery加载完成（如果页面使用jQuery）
         if self._wait_for_jquery_ready():
-            print("✅ jQuery加载完成")
+            logger.debug("jQuery加载完成")
 
         # 方法3：等待Ajax请求完成
         if self._wait_for_ajax_complete():
-            print("✅ Ajax请求完成")
+            logger.debug("Ajax请求完成")
 
     def _wait_for_ajax_complete(self, timeout=10):
         """等待Ajax请求完成"""
@@ -231,7 +231,7 @@ class FlightRouteSearcher:
         return False
     def _wait_for_loading_complete(self, timeout=15):
         """等待加载指示器消失"""
-        print("⏳ 等待加载指示器消失...")
+        logger.debug("等待加载指示器消失...")
 
         # 常见的加载指示器选择器
         loading_selectors = [
@@ -255,7 +255,7 @@ class FlightRouteSearcher:
                     time.sleep(0.5)
                 else:
                     continue
-                print(f"✅ 加载指示器 {selector} 已消失")
+                logger.debug(f"加载指示器 {selector} 已消失")
                 break
             except:
                 continue

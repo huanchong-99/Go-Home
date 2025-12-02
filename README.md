@@ -59,20 +59,37 @@ powershell -Command "Set-Location 'f:\Go-home\Go-home\12306-mcp'; & 'G:\conda en
 "G:/conda environment/Go-home/node.exe" "f:/Go-home/Go-home/12306-mcp/build/index.js"
 ```
 
+#### 4. 主程序 (main.py) - 已完成
+- 框架：CustomTkinter (现代化 UI)
+- 功能：
+  - ✅ 现代化深色/浅色主题 UI
+  - ✅ 一键启动/停止两个 MCP 服务
+  - ✅ OpenAI 标准格式 API 配置
+  - ✅ 自动获取可用模型列表（下拉选择）
+  - ✅ API 连接测试
+  - ✅ 运行日志实时显示
+  - ✅ 配置持久化存储
+  - ✅ **MCP 工具调用集成**（AI 可直接调用 MCP 工具查询票务）
+  - ✅ **AI Function Calling** 支持多轮工具调用
+
+运行命令：
+```bash
+"G:/conda environment/Go-home/python.exe" "f:/Go-home/Go-home/main.py"
+```
+
 ### 待开发
 
-- [ ] 主程序开发：整合两个 MCP 服务的客户端
 - [ ] 路线组合算法：计算机票+火车票的最优组合
 - [ ] 价格比较模块：多方案价格对比
 - [ ] 时间优化模块：换乘时间合理性检查
-- [ ] 用户界面：命令行或图形界面
+- [ ] 打包分发：制作独立安装包
 
 ## 技术架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Go-home 主程序                        │
-│              (待开发 - 路线规划与比价)                    │
+│         main.py (CustomTkinter UI + OpenAI API)         │
 └─────────────────┬───────────────────┬───────────────────┘
                   │                   │
                   │ MCP Protocol      │ MCP Protocol
@@ -98,6 +115,9 @@ powershell -Command "Set-Location 'f:\Go-home\Go-home\12306-mcp'; & 'G:\conda en
 ```
 Go-home/
 ├── Go-home/
+│   ├── main.py                   # 主程序入口 (CustomTkinter UI)
+│   ├── config.json               # 配置文件 (API Key等)
+│   │
 │   ├── FlightTicketMCP/          # 机票查询 MCP 服务
 │   │   ├── flight_ticket_mcp_server/
 │   │   │   ├── main.py           # 服务入口
@@ -131,12 +151,20 @@ Node.js: 24.9.0
 
 ## 快速开始
 
-### 1. 启动机票查询服务
+### 方式一：使用主程序 (推荐)
+```bash
+"G:/conda environment/Go-home/python.exe" "f:/Go-home/Go-home/main.py"
+```
+启动后在 UI 界面点击 **[一键启动服务]** 即可同时启动两个 MCP 服务。
+
+### 方式二：手动启动服务
+
+#### 启动机票查询服务
 ```bash
 "G:/conda environment/Go-home/python.exe" -m flight_ticket_mcp_server
 ```
 
-### 2. 启动火车票查询服务
+#### 启动火车票查询服务
 ```bash
 "G:/conda environment/Go-home/node.exe" "f:/Go-home/Go-home/12306-mcp/build/index.js"
 ```
