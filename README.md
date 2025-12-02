@@ -2,237 +2,251 @@
 
 一款整合机票和火车票查询的智能出行规划软件，帮助你找到回家的最优交通组合方案。
 
-## 项目愿景
+## 功能特性
 
-本项目旨在开发一款软件，通过接入两个 MCP (Model Context Protocol) 服务，实现：
-- 查询回家的机票价格和时刻
-- 查询回家的火车票价格和时刻
-- 智能组合机票+火车票的换乘方案
-- 计算并推荐最优价格/时间的出行方案
+- **智能中转推荐**：自动通过全国 44 个主要交通枢纽计算最优中转组合
+- **跨模式组合**：支持 飞机→飞机、飞机→高铁、高铁→飞机、高铁→高铁 等多种组合
+- **多策略优化**：省钱优先、省时优先、均衡推荐
+- **住宿费用计算**：自动识别需要过夜的中转方案，计算真实成本
+- **现代化 UI**：基于 CustomTkinter 的深色/浅色主题界面
 
-## 当前进度
+## 数据来源说明
 
-### 已完成
+### 机票数据 - 携程 (Ctrip)
 
-#### 1. Conda 环境配置
-- 环境名称：`Go-home`
-- 环境路径：`G:\conda environment\Go-home`
-- Python 版本：3.13.9
-- Node.js 版本：24.9.0 (通过 conda-forge 安装)
-- npm 版本：11.6.0
+> **重要提示**
 
-#### 2. FlightTicketMCP (机票查询服务) - 已配置完成
-- 语言：Python
-- 框架：FastMCP
-- 功能：航班路线查询、中转航班查询、航班实时跟踪、天气查询
-- **数据来源**：携程 (Ctrip) 实时航班数据
-- **支持范围**：国内 + 国际航线 (共 437 个城市/机场)
-- 状态：✅ 依赖已安装，服务可正常运行
+机票数据来源于携程网站，存在以下限制：
 
-安装命令：
+1. **验证码处理**：首次查询可能触发验证码，程序会弹出浏览器窗口，需要手动完成验证
+2. **Cookie 复用**：验证完成后 Cookie 会保存在 `browser_data/` 目录，后续查询无需重复验证
+3. **价格差异**：携程存在"杀熟"现象，不同账号看到的价格可能不同
+4. **活动限制**：携程的优惠活动、会员折扣等无法体现在查询结果中
+5. **平台限制**：仅能获取携程平台的机票数据，其他平台（飞猪、去哪儿等）的价格和活动无法查询
+6. **反爬限制**：携程反爬较严格，机票查询采用串行方式执行，速度较慢
+
+**建议**：查询结果仅供参考，实际购票时请多平台比价。
+
+### 火车票数据 - 12306 官方
+
+火车票数据直接来自 12306 官方 API：
+
+- **数据准确**：价格、余票信息与官方一致
+- **查询限制**：12306 仅支持查询 15 天内的车票
+- **无需登录**：火车票查询不需要登录验证
+
+## 快速开始
+
+### 1. 环境准备
+
+推荐使用 Conda 创建独立环境：
+
 ```bash
-"G:/conda environment/Go-home/python.exe" -m pip install -r "f:/Go-home/Go-home/FlightTicketMCP/requirements.txt"
-"G:/conda environment/Go-home/python.exe" -m pip install -e "f:/Go-home/Go-home/FlightTicketMCP"
+# 创建环境
+conda create -n Go-home python=3.13
+
+# 激活环境
+conda activate Go-home
+
+# 安装 Node.js (用于火车票服务)
+conda install -c conda-forge nodejs
 ```
 
-运行命令：
+### 2. 安装依赖
+
 ```bash
-"G:/conda environment/Go-home/python.exe" -m flight_ticket_mcp_server
+# 克隆项目
+git clone https://github.com/your-username/Go-home.git
+cd Go-home
+
+# 安装 Python 依赖
+pip install -r requirements.txt
+
+# 安装机票 MCP 服务
+pip install -e ./FlightTicketMCP
+
+# 安装火车票 MCP 服务
+cd 12306-mcp
+npm install
+npm run build
+cd ..
 ```
 
-#### 3. 12306-mcp (火车票查询服务) - 已配置完成
-- 语言：TypeScript
-- 框架：@modelcontextprotocol/sdk
-- 功能：12306 余票查询、中转票查询、车次经停站查询
-- 状态：✅ 依赖已安装，TypeScript 已编译，服务可正常运行
+### 3. 配置 API
 
-安装命令：
+复制配置文件并填入你的 API 信息：
+
 ```bash
-powershell -Command "Set-Location 'f:\Go-home\Go-home\12306-mcp'; & 'G:\conda environment\Go-home\node.exe' 'G:\conda environment\Go-home\node_modules\npm\bin\npm-cli.js' install --ignore-scripts"
+cp config.example.json config.json
 ```
 
-编译命令：
+编辑 `config.json`：
+
+```json
+{
+  "api_base_url": "https://api.openai.com/v1",
+  "api_key": "your-api-key-here",
+  "model": "gpt-4",
+  "theme": "dark",
+  "window_size": "1200x800"
+}
+```
+
+支持任何 OpenAI 兼容的 API 服务（如 Azure OpenAI、Claude API 代理等）。
+
+### 4. 运行程序
+
 ```bash
-"G:/conda environment/Go-home/node.exe" "f:/Go-home/Go-home/12306-mcp/node_modules/typescript/bin/tsc" -p "f:/Go-home/Go-home/12306-mcp"
+python main.py
 ```
 
-运行命令：
-```bash
-"G:/conda environment/Go-home/node.exe" "f:/Go-home/Go-home/12306-mcp/build/index.js"
-```
+启动后：
+1. 点击 **「一键启动服务」** 启动 MCP 服务
+2. 填写出发地、目的地、日期
+3. 选择偏好设置
+4. 点击 **「开始查询」**
 
-#### 4. 主程序 (main.py) - 已完成
-- 框架：CustomTkinter (现代化 UI)
-- 功能：
-  - ✅ 现代化深色/浅色主题 UI
-  - ✅ 一键启动/停止两个 MCP 服务
-  - ✅ OpenAI 标准格式 API 配置
-  - ✅ 自动获取可用模型列表（下拉选择）
-  - ✅ API 连接测试
-  - ✅ 运行日志实时显示
-  - ✅ 配置持久化存储
-  - ✅ **MCP 工具调用集成**（AI 可直接调用 MCP 工具查询票务）
-  - ✅ **AI Function Calling** 支持多轮工具调用
-
-运行命令：
-```bash
-"G:/conda environment/Go-home/python.exe" "f:/Go-home/Go-home/main.py"
-```
-
-### 待开发
-
-- [ ] 路线组合算法：计算机票+火车票的最优组合
-- [ ] 价格比较模块：多方案价格对比
-- [ ] 时间优化模块：换乘时间合理性检查
-- [ ] 打包分发：制作独立安装包
-
-## 技术架构
+## 项目架构
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Go-home 主程序                        │
-│         main.py (CustomTkinter UI + OpenAI API)         │
-└─────────────────┬───────────────────┬───────────────────┘
-                  │                   │
-                  │ MCP Protocol      │ MCP Protocol
-                  │ (stdio)           │ (stdio)
-                  ▼                   ▼
-┌─────────────────────────┐ ┌─────────────────────────────┐
-│   FlightTicketMCP       │ │       12306-mcp             │
-│   (Python/FastMCP)      │ │    (TypeScript/MCP SDK)     │
-│                         │ │                             │
-│ - 航班路线查询          │ │ - 火车票余票查询            │
-│ - 中转航班查询          │ │ - 中转票查询                │
-│ - 航班实时跟踪          │ │ - 车次经停站查询            │
-│ - 天气查询              │ │ - 车站代码查询              │
-└─────────────────────────┘ └─────────────────────────────┘
-          │                           │
-          ▼                           ▼
-    航班数据API                   12306 官方API
-    (OpenSky等)
+┌─────────────────────────────────────────────────────────────┐
+│                      Go-home 主程序                          │
+│              main.py (CustomTkinter UI + AI API)            │
+│                                                             │
+│  ┌─────────────────┐  ┌──────────────────────────────────┐  │
+│  │  分段查询引擎    │  │         中转枢纽管理器            │  │
+│  │ segment_query.py│  │       transfer_hubs.py           │  │
+│  └────────┬────────┘  └──────────────────────────────────┘  │
+└───────────┼─────────────────────────────────────────────────┘
+            │
+            │ MCP Protocol (stdio)
+            │
+    ┌───────┴───────┐
+    │               │
+    ▼               ▼
+┌─────────────┐ ┌─────────────────┐
+│ FlightMCP   │ │   12306-mcp     │
+│  (Python)   │ │  (TypeScript)   │
+│             │ │                 │
+│ 航班路线查询 │ │ 火车票余票查询   │
+│ 中转航班查询 │ │ 中转票查询      │
+└──────┬──────┘ └────────┬────────┘
+       │                 │
+       ▼                 ▼
+   携程网站           12306 官方
 ```
+
+## 中转枢纽策略
+
+系统内置全国 44 个主要交通枢纽，支持智能中转推荐：
+
+### 枢纽等级
+
+| 等级 | 城市 |
+|------|------|
+| 一级 | 北京、上海、广州 |
+| 二级 | 深圳、成都、重庆、西安、武汉、郑州 |
+| 三级 | 南京、杭州、长沙、昆明、沈阳、哈尔滨 |
+| 四级 | 其他省会及重要城市 |
+
+### 空铁联运枢纽
+
+支持飞机转高铁零换乘或快速换乘的城市：
+- **一体化换乘**（60-90分钟）：上海虹桥、北京大兴、郑州新郑、成都双流/天府、海口美兰
+- **轨道交通连接**（120分钟）：长沙黄花、深圳宝安
 
 ## 项目结构
 
 ```
 Go-home/
-├── Go-home/
-│   ├── main.py                   # 主程序入口 (CustomTkinter UI)
-│   ├── config.json               # 配置文件 (API Key等)
-│   │
-│   ├── FlightTicketMCP/          # 机票查询 MCP 服务
-│   │   ├── flight_ticket_mcp_server/
-│   │   │   ├── main.py           # 服务入口
-│   │   │   ├── tools/            # MCP 工具实现
-│   │   │   └── utils/            # 工具函数
-│   │   ├── requirements.txt
-│   │   └── pyproject.toml
-│   │
-│   ├── 12306-mcp/                # 火车票查询 MCP 服务
-│   │   ├── src/
-│   │   │   ├── index.ts          # 服务入口
-│   │   │   └── types.ts          # 类型定义
-│   │   ├── build/                # 编译输出
-│   │   └── package.json
-│   │
-│   ├── CLAUDE.md                 # Claude Code 开发指南
-│   └── README.md                 # 本文件
+├── main.py                      # 主程序入口
+├── segment_query.py             # 分段查询引擎
+├── transfer_hubs.py             # 中转枢纽配置
+├── config.json                  # 用户配置 (不要提交到 Git)
+├── config.example.json          # 配置示例
+├── requirements.txt             # Python 依赖
+│
+├── FlightTicketMCP/             # 机票查询 MCP 服务
+│   ├── flight_ticket_mcp_server/
+│   │   ├── tools/               # 查询工具实现
+│   │   └── utils/               # 城市字典等
+│   └── browser_data/            # 浏览器 Cookie 缓存
+│
+├── 12306-mcp/                   # 火车票查询 MCP 服务
+│   ├── src/                     # TypeScript 源码
+│   └── build/                   # 编译输出
+│
+└── 中转枢纽.md                   # 枢纽配置文档
 ```
-
-## 环境要求
-
-**强制要求**：所有操作必须在 Conda 环境 `Go-home` 中执行。
-
-```bash
-# 环境信息
-Name: Go-home
-Path: G:\conda environment\Go-home
-Python: 3.13.9
-Node.js: 24.9.0
-```
-
-## 快速开始
-
-### 方式一：使用主程序 (推荐)
-```bash
-"G:/conda environment/Go-home/python.exe" "f:/Go-home/Go-home/main.py"
-```
-启动后在 UI 界面点击 **[一键启动服务]** 即可同时启动两个 MCP 服务。
-
-### 方式二：手动启动服务
-
-#### 启动机票查询服务
-```bash
-"G:/conda environment/Go-home/python.exe" -m flight_ticket_mcp_server
-```
-
-#### 启动火车票查询服务
-```bash
-"G:/conda environment/Go-home/node.exe" "f:/Go-home/Go-home/12306-mcp/build/index.js"
-```
-
-两个服务都默认使用 **stdio 模式**运行，适合作为 MCP Server 被主程序调用。
 
 ## MCP 工具列表
 
-### FlightTicketMCP 提供的工具
+### 机票服务 (FlightTicketMCP)
+
 | 工具名 | 功能 |
 |--------|------|
 | `searchFlightRoutes` | 航班路线查询 |
 | `getTransferFlightsByThreePlace` | 中转航班查询 |
 | `getFlightInfo` | 航班详情查询 |
-| `getWeatherByLocation` | 按经纬度查询天气 |
-| `getWeatherByCity` | 按城市查询天气 |
-| `getFlightStatus` | 航班实时状态 |
-| `getAirportFlights` | 机场周边航班 |
-| `getFlightsInArea` | 区域航班查询 |
-| `trackMultipleFlights` | 批量航班跟踪 |
-| `getCurrentDate` | 获取当前日期 |
+| `getWeatherByCity` | 城市天气查询 |
 
-### 12306-mcp 提供的工具
+### 火车票服务 (12306-mcp)
+
 | 工具名 | 功能 |
 |--------|------|
 | `get-tickets` | 火车票余票查询 |
 | `get-interline-tickets` | 中转票查询 |
 | `get-train-route-stations` | 车次经停站查询 |
 | `get-station-code-of-citys` | 城市站点代码查询 |
-| `get-station-code-by-names` | 站名代码查询 |
-| `get-stations-code-in-city` | 城市内所有站点查询 |
-| `get-current-date` | 获取当前日期 |
 
-## 国际机场支持
+## 国际航线支持
 
-FlightTicketMCP 现已支持查询国际航班，覆盖全球主要城市和机场。
-
-### 支持的地区
+机票服务支持查询国际航班，覆盖全球主要城市：
 
 | 地区 | 主要城市 |
 |------|----------|
-| 东南亚 | 曼谷、新加坡、吉隆坡、雅加达、马尼拉、河内、胡志明市、普吉岛、巴厘岛等 |
-| 东亚 | 东京、大阪、首尔、釜山、济州岛等 |
-| 南亚 | 新德里、孟买、科伦坡、马尔代夫等 |
-| 中东 | 迪拜、多哈、伊斯坦布尔等 |
-| 欧洲 | 伦敦、巴黎、法兰克福、阿姆斯特丹、罗马、马德里、莫斯科等 |
-| 北美 | 纽约、洛杉矶、旧金山、芝加哥、温哥华、多伦多等 |
-| 大洋洲 | 悉尼、墨尔本、奥克兰、斐济等 |
-| 非洲 | 开罗、约翰内斯堡、毛里求斯等 |
+| 东南亚 | 曼谷、新加坡、吉隆坡、雅加达、马尼拉、普吉岛、巴厘岛 |
+| 东亚 | 东京、大阪、首尔、釜山 |
+| 欧洲 | 伦敦、巴黎、法兰克福、阿姆斯特丹、莫斯科 |
+| 北美 | 纽约、洛杉矶、旧金山、温哥华、多伦多 |
+| 大洋洲 | 悉尼、墨尔本、奥克兰 |
 
-### 使用示例
+**注意**：火车票仅支持中国国内线路。
 
-查询国际航班时，直接输入城市名即可：
-- "帮我查询北京到曼谷的机票"
-- "查一下上海到东京的航班"
-- "深圳到新加坡有什么航班"
+## 常见问题
 
-**注意**：12306 火车票服务仅支持中国国内线路，无法查询国际铁路。
+### Q: 机票查询弹出浏览器窗口怎么办？
 
-## 开发文档
+A: 这是验证码检测机制。请在弹出的浏览器中完成验证（滑块/点选），完成后程序会自动继续。验证通过后 Cookie 会保存，后续查询不需要再验证。
 
-详细的开发指南请参阅 [CLAUDE.md](./CLAUDE.md)，包含：
-- Conda 环境强制要求
-- 完整的构建和运行命令
-- 代码架构说明
-- 编码规范
+### Q: 为什么机票价格和我看到的不一样？
+
+A: 携程对不同用户展示不同价格（俗称"杀熟"）。程序获取的是未登录状态的价格，可能与你登录后看到的价格不同。此外，会员折扣、平台活动等也不会体现在查询结果中。
+
+### Q: 火车票查询显示"日期调整"是什么意思？
+
+A: 12306 只能查询 15 天内的车票。如果你查询的日期超出范围，系统会自动调整到最远可查日期，并在结果中提示。
+
+### Q: 查询很慢怎么办？
+
+A:
+- 机票查询采用串行方式（避免触发反爬），每个查询约需 10-30 秒
+- 火车票查询采用并行方式，速度较快
+- 选择更少的中转枢纽数量（8个）可以加快查询速度
+
+## 技术栈
+
+- **前端**：CustomTkinter (现代化 Tkinter)
+- **AI**：OpenAI API (支持任何兼容接口)
+- **机票服务**：Python + FastMCP + DrissionPage (浏览器自动化)
+- **火车票服务**：TypeScript + MCP SDK
+- **协议**：Model Context Protocol (MCP)
+
+## 致谢
+
+- [12306-mcp](https://github.com/xingkong2053/12306-mcp) - 火车票查询 MCP 服务
+- [DrissionPage](https://github.com/g1879/DrissionPage) - 浏览器自动化工具
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - 现代化 UI 框架
 
 ## License
 
