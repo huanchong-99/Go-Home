@@ -801,10 +801,24 @@ class GoHomeApp(ctk.CTk):
 {transport_text}
 {duration_text}
 
-【工具使用说明】
-1. 查询火车票时，需要先使用 train_get-station-code-of-citys 获取城市的 station_code，再用于查询
-2. 查询机票时，城市名需要使用中文
-3. 日期格式为 yyyy-MM-dd
+【重要：工具调用参数格式】
+调用工具时必须传递正确的参数，以下是具体示例：
+
+1. 查询火车票城市代码（必须先调用）：
+   工具: train_get-station-code-of-citys
+   参数: {{"citys": "北京|上海"}}  // citys 参数必填，多个城市用 | 分隔
+
+2. 查询火车票：
+   工具: train_get-tickets
+   参数: {{"date": "2025-01-15", "fromStation": "BJP", "toStation": "SHH"}}
+
+3. 查询机票航线：
+   工具: flight_searchFlightRoutes
+   参数: {{"departCity": "北京", "arriveCity": "上海", "departDate": "2025-01-15"}}
+
+【工具使用流程】
+- 火车票查询：先用 train_get-station-code-of-citys 获取站点代码，再用 train_get-tickets 查询
+- 机票查询：直接用 flight_searchFlightRoutes，城市名使用中文
 
 【输出要求】
 1. 根据查询结果，整理出清晰的票务信息
@@ -901,6 +915,7 @@ class GoHomeApp(ctk.CTk):
 
             while iteration < max_iterations:
                 iteration += 1
+                self.after(0, lambda it=iteration: self.log_message(f"[AI] 第 {it} 轮对话"))
 
                 # 调用 AI API
                 if has_tools:
@@ -947,12 +962,14 @@ class GoHomeApp(ctk.CTk):
                         except json.JSONDecodeError:
                             tool_args = {}
 
-                        self.after(0, lambda tn=tool_name: self.log_message(f"[MCP] 调用工具: {tn}"))
+                        self.after(0, lambda tn=tool_name, ta=str(tool_args): self.log_message(f"[MCP] 调用工具: {tn}, 参数: {ta}"))
 
                         # 调用 MCP 工具
                         tool_result = self.mcp_manager.call_tool(tool_name, tool_args)
 
-                        self.after(0, lambda: self.log_message(f"[MCP] 工具返回结果"))
+                        # 截断过长的结果用于日志显示
+                        log_result = tool_result[:200] + "..." if len(tool_result) > 200 else tool_result
+                        self.after(0, lambda lr=log_result: self.log_message(f"[MCP] 返回: {lr}"))
 
                         # 将工具结果添加到消息列表
                         messages.append({
