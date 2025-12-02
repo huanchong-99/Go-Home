@@ -296,13 +296,13 @@ class MCPServiceManager:
             tools.extend(self.train_client.tools)
         return tools
 
-    def call_tool(self, tool_name: str, arguments: Dict) -> str:
+    def call_tool(self, tool_name: str, arguments: Dict, timeout: float = 60) -> str:
         """调用工具"""
         try:
             if tool_name.startswith("flight_") and self.flight_client:
-                return self.flight_client.call_tool(tool_name, arguments)
+                return self.flight_client.call_tool(tool_name, arguments, timeout)
             elif tool_name.startswith("train_") and self.train_client:
-                return self.train_client.call_tool(tool_name, arguments)
+                return self.train_client.call_tool(tool_name, arguments, timeout)
             else:
                 return f"未知工具: {tool_name}"
         except Exception as e:
@@ -406,9 +406,16 @@ class GoHomeApp(ctk.CTk):
 
     def create_sidebar(self):
         """创建侧边栏"""
-        self.sidebar = ctk.CTkFrame(self, width=280, corner_radius=0)
+        # 创建侧边栏容器（使用滚动框架支持内容溢出）
+        # 设置较深的背景色，让内部卡片更突出
+        self.sidebar = ctk.CTkScrollableFrame(
+            self,
+            width=300,
+            corner_radius=0,
+            fg_color=("gray92", "gray14")  # 浅色/深色模式的背景
+        )
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(10, weight=1)
+        self.sidebar.grid_columnconfigure(0, weight=1)
 
         # Logo/标题
         self.logo_label = ctk.CTkLabel(
@@ -423,18 +430,24 @@ class GoHomeApp(ctk.CTk):
             text="回家最优路线查询",
             font=ctk.CTkFont(size=14)
         )
-        self.subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 20))
+        self.subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 15))
 
-        # MCP 服务控制区
-        self.service_frame = ctk.CTkFrame(self.sidebar)
-        self.service_frame.grid(row=2, column=0, padx=15, pady=10, sticky="ew")
+        # MCP 服务控制区 - 使用卡片样式
+        self.service_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=("gray98", "gray20"),  # 比背景稍亮的卡片色
+            corner_radius=10
+        )
+        self.service_frame.grid(row=2, column=0, padx=12, pady=8, sticky="ew")
+
+        self.service_frame.grid_columnconfigure(0, weight=1)  # 让内容居中
 
         self.service_label = ctk.CTkLabel(
             self.service_frame,
             text="MCP 服务控制",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.service_label.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5))
+        self.service_label.grid(row=0, column=0, padx=10, pady=(10, 5))
 
         # 机票服务状态
         self.flight_status = ctk.CTkLabel(
@@ -477,16 +490,21 @@ class GoHomeApp(ctk.CTk):
         )
         self.stop_all_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
 
-        # 中转枢纽模式切换区
-        self.hub_mode_frame = ctk.CTkFrame(self.sidebar)
-        self.hub_mode_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+        # 中转枢纽模式切换区 - 使用卡片样式
+        self.hub_mode_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=("gray98", "gray20"),
+            corner_radius=10
+        )
+        self.hub_mode_frame.grid(row=3, column=0, padx=12, pady=8, sticky="ew")
+        self.hub_mode_frame.grid_columnconfigure(0, weight=1)  # 让内容居中
 
         self.hub_mode_label = ctk.CTkLabel(
             self.hub_mode_frame,
             text="智能中转模式",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.hub_mode_label.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
+        self.hub_mode_label.grid(row=0, column=0, padx=10, pady=(10, 5))
 
         # 中转模式开关
         self.hub_mode_switch_var = ctk.StringVar(value="off")
@@ -499,7 +517,7 @@ class GoHomeApp(ctk.CTk):
             command=self.toggle_transfer_hub_mode,
             font=ctk.CTkFont(size=13)
         )
-        self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5)
 
         # 中转模式状态提示
         self.hub_mode_status = ctk.CTkLabel(
@@ -508,18 +526,105 @@ class GoHomeApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.hub_mode_status.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="w")
+        self.hub_mode_status.grid(row=2, column=0, padx=10, pady=(0, 10))
 
-        # API 配置区
-        self.api_frame = ctk.CTkFrame(self.sidebar)
-        self.api_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
+        # 住宿费用设置区 - 使用卡片样式
+        self.accommodation_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=("gray98", "gray20"),
+            corner_radius=10
+        )
+        self.accommodation_frame.grid(row=4, column=0, padx=12, pady=8, sticky="ew")
+        self.accommodation_frame.grid_columnconfigure(0, weight=1)  # 左列扩展
+        self.accommodation_frame.grid_columnconfigure(1, weight=1)  # 右列扩展
+
+        self.accommodation_label = ctk.CTkLabel(
+            self.accommodation_frame,
+            text="住宿费用计算",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.accommodation_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="e")
+
+        # 住宿费用开关
+        self.accommodation_enabled_var = ctk.StringVar(
+            value="on" if self.config_manager.get("accommodation_enabled", True) else "off"
+        )
+        self.accommodation_switch = ctk.CTkSwitch(
+            self.accommodation_frame,
+            text="",
+            variable=self.accommodation_enabled_var,
+            onvalue="on",
+            offvalue="off",
+            command=self.toggle_accommodation,
+            width=40
+        )
+        self.accommodation_switch.grid(row=0, column=1, padx=10, pady=(10, 5), sticky="w")
+
+        # 中转等待时间阈值说明
+        self.accommodation_desc = ctk.CTkLabel(
+            self.accommodation_frame,
+            text="中转等待超过阈值且跨夜间\n或超过12小时（任何时段）\n将额外计算¥200住宿费",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            justify="center"
+        )
+        self.accommodation_desc.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 5))
+
+        # 中转等待时间阈值选择
+        self.threshold_label = ctk.CTkLabel(
+            self.accommodation_frame,
+            text="等待时间阈值:",
+            font=ctk.CTkFont(size=13)
+        )
+        self.threshold_label.grid(row=2, column=0, padx=10, pady=5, sticky="e")
+
+        # 下拉框：1-24小时
+        threshold_values = [str(i) + " 小时" for i in range(1, 25)]
+        self.accommodation_threshold = ctk.CTkComboBox(
+            self.accommodation_frame,
+            values=threshold_values,
+            width=100,
+            state="readonly"
+        )
+        self.accommodation_threshold.grid(row=2, column=1, padx=10, pady=5, sticky="w")
+        # 默认值：6小时
+        default_threshold = self.config_manager.get("accommodation_threshold", 6)
+        self.accommodation_threshold.set(f"{default_threshold} 小时")
+
+        # 住宿费用金额设置
+        self.accommodation_fee_label = ctk.CTkLabel(
+            self.accommodation_frame,
+            text="住宿费用:",
+            font=ctk.CTkFont(size=13)
+        )
+        self.accommodation_fee_label.grid(row=3, column=0, padx=10, pady=(5, 10), sticky="e")
+
+        self.accommodation_fee_display = ctk.CTkLabel(
+            self.accommodation_frame,
+            text="¥200/次",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="orange"
+        )
+        self.accommodation_fee_display.grid(row=3, column=1, padx=10, pady=(5, 10), sticky="w")
+
+        # 根据开关状态设置控件可用性
+        self._update_accommodation_ui_state()
+
+        # API 配置区 - 使用卡片样式
+        self.api_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=("gray98", "gray20"),
+            corner_radius=10
+        )
+        self.api_frame.grid(row=5, column=0, padx=12, pady=8, sticky="ew")
+        self.api_frame.grid_columnconfigure(0, weight=1)  # 让内部元素可以扩展
 
         self.api_label = ctk.CTkLabel(
             self.api_frame,
             text="AI API 配置",
             font=ctk.CTkFont(size=16, weight="bold")
         )
-        self.api_label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        self.api_label.grid(row=0, column=0, padx=10, pady=(10, 5))
 
         # API Base URL
         self.api_url_label = ctk.CTkLabel(self.api_frame, text="API Base URL:")
@@ -527,8 +632,7 @@ class GoHomeApp(ctk.CTk):
 
         self.api_url_entry = ctk.CTkEntry(
             self.api_frame,
-            placeholder_text="https://api.openai.com/v1",
-            width=230
+            placeholder_text="https://api.openai.com/v1"
         )
         self.api_url_entry.grid(row=2, column=0, padx=10, pady=(0, 5), sticky="ew")
         self.api_url_entry.insert(0, self.config_manager.get("api_base_url", ""))
@@ -540,8 +644,7 @@ class GoHomeApp(ctk.CTk):
         self.api_key_entry = ctk.CTkEntry(
             self.api_frame,
             placeholder_text="sk-...",
-            show="*",
-            width=230
+            show="*"
         )
         self.api_key_entry.grid(row=4, column=0, padx=10, pady=(0, 5), sticky="ew")
         self.api_key_entry.insert(0, self.config_manager.get("api_key", ""))
@@ -560,7 +663,6 @@ class GoHomeApp(ctk.CTk):
         self.model_combobox = ctk.CTkComboBox(
             self.model_select_frame,
             values=self.available_models,
-            width=160,
             state="readonly"
         )
         self.model_combobox.grid(row=0, column=0, sticky="ew")
@@ -585,16 +687,30 @@ class GoHomeApp(ctk.CTk):
         )
         self.save_config_btn.grid(row=7, column=0, padx=10, pady=10, sticky="ew")
 
-        # 主题切换
-        self.theme_label = ctk.CTkLabel(self.sidebar, text="主题:", anchor="w")
-        self.theme_label.grid(row=11, column=0, padx=20, pady=(10, 0), sticky="w")
+        # 主题切换 - 使用卡片样式
+        self.theme_frame = ctk.CTkFrame(
+            self.sidebar,
+            fg_color=("gray98", "gray20"),
+            corner_radius=10
+        )
+        self.theme_frame.grid(row=6, column=0, padx=12, pady=8, sticky="ew")
+        self.theme_frame.grid_columnconfigure(0, weight=1)  # 左列扩展
+        self.theme_frame.grid_columnconfigure(1, weight=1)  # 右列扩展
+
+        self.theme_label = ctk.CTkLabel(
+            self.theme_frame,
+            text="主题:",
+            font=ctk.CTkFont(size=14)
+        )
+        self.theme_label.grid(row=0, column=0, padx=10, pady=10, sticky="e")
 
         self.theme_menu = ctk.CTkOptionMenu(
-            self.sidebar,
+            self.theme_frame,
             values=["dark", "light", "system"],
-            command=self.change_theme
+            command=self.change_theme,
+            width=100
         )
-        self.theme_menu.grid(row=12, column=0, padx=20, pady=(5, 20), sticky="ew")
+        self.theme_menu.grid(row=0, column=1, padx=10, pady=10, sticky="w")
         self.theme_menu.set(self.config_manager.get("theme", "dark"))
 
     def create_main_content(self):
@@ -890,8 +1006,36 @@ class GoHomeApp(ctk.CTk):
         today_str = today.strftime("%Y-%m-%d")
         max_train_date_str = max_train_date.strftime("%Y-%m-%d")
 
+        # 获取住宿费用设置
+        accommodation_enabled = self.config_manager.get("accommodation_enabled", True)
+        threshold_hours = self.config_manager.get("accommodation_threshold", 6)
+
+        if accommodation_enabled:
+            accommodation_prompt = f"""【重要：住宿费用计算规则】
+为了给用户更真实的成本预估，需要在以下情况额外加 ¥200 住宿费：
+
+判断条件（满足任一即可）：
+1. 中转等待时间 ≥ {threshold_hours} 小时 且 等待时段覆盖夜间（22:00-06:00）
+2. 中转等待时间 ≥ 12 小时（无论白天黑夜，超长等待必须休息）
+
+不需要加住宿费的情况：
+- 直达航班/火车（无论多长时间，都在交通工具上休息）
+- 中转等待时间 < {threshold_hours} 小时 且 不跨夜间
+- 乘坐卧铺火车过夜（车票已包含住宿功能）
+
+在推荐时，请计算"真实成本" = 票价 + 住宿费（如需要）。
+"""
+        else:
+            accommodation_prompt = ""
+
         # 获取中转枢纽模式的提示词补充
         transfer_hub_prompt = get_transfer_hub_prompt(transport, self.transfer_hub_mode)
+
+        # 输出要求第4点根据住宿费用开关状态动态变化
+        if accommodation_enabled:
+            output_price_info = "4. 列出每个方案的关键信息：出发时间、到达时间、历时、价格、真实成本（含住宿费）"
+        else:
+            output_price_info = "4. 列出每个方案的关键信息：出发时间、到达时间、历时、价格"
 
         base_prompt = f"""你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
 
@@ -956,11 +1100,12 @@ class GoHomeApp(ctk.CTk):
 - 机票查询：直接用 flight_searchFlightRoutes，城市名使用中文
 - 中转查询：需要指定中转城市/车站
 {transfer_hub_prompt}
+{accommodation_prompt}
 【输出要求】
 1. 根据查询结果，整理出清晰的票务信息
 2. 按照用户偏好排序推荐方案
 3. 给出具体的推荐理由
-4. 列出每个方案的关键信息：出发时间、到达时间、历时、价格
+{output_price_info}
 5. 使用友好的中文回复，格式清晰易读
 6. 如果有多个好的选择，最多推荐3个最佳方案"""
 
@@ -1063,6 +1208,13 @@ class GoHomeApp(ctk.CTk):
                 self.after(0, lambda td=train_date: self.log_message(
                     f"[分段查询] 火车票日期调整为 {td}（12306 15天限制）"))
 
+            # 预热机票服务（触发验证码处理，确保后续查询正常）
+            if transport in ["all", "flight"] and self.mcp_manager.flight_running:
+                self.after(0, lambda: self.append_result("\n\n🔥 预热机票服务中（如有验证码请完成验证）..."))
+                warmup_success = engine.warmup_flight_service(test_date=date)
+                if not warmup_success:
+                    self.after(0, lambda: self.append_result("\n⚠️ 机票服务预热失败，机票查询可能受影响"))
+
             # 构建所有分段查询请求
             queries = engine.build_segment_queries(
                 origin=from_city,
@@ -1074,9 +1226,9 @@ class GoHomeApp(ctk.CTk):
             )
 
             self.after(0, lambda n=len(queries): self.log_message(f"[分段查询] 共 {n} 个分段查询任务"))
-            self.after(0, lambda n=len(queries): self.append_result(f"\n📊 共 {n} 个分段查询任务，开始并行执行..."))
+            self.after(0, lambda n=len(queries): self.append_result(f"\n📊 共 {n} 个分段查询任务，开始执行..."))
 
-            # 并行执行所有查询
+            # 执行所有查询（火车票并行，机票串行）
             results = engine.execute_parallel_queries(
                 queries=queries,
                 train_date=train_date,
@@ -1121,11 +1273,44 @@ class GoHomeApp(ctk.CTk):
         base_url = self.api_url_entry.get()
         model = self.model_combobox.get()
 
+        # 获取住宿费用设置
+        accommodation_enabled = self.config_manager.get("accommodation_enabled", True)
+        threshold_hours = self.config_manager.get("accommodation_threshold", 6)
+
         try:
             client = OpenAI(api_key=api_key, base_url=base_url)
 
+            # 根据住宿费用开关构建提示词
+            if accommodation_enabled:
+                accommodation_section = f"""
+【重要：住宿费用计算规则】
+为了给用户更真实的成本预估，需要在以下情况额外加 ¥200 住宿费：
+
+判断条件（满足任一即可）：
+1. 中转等待时间 ≥ {threshold_hours} 小时 且 等待时段覆盖夜间（22:00-06:00）
+2. 中转等待时间 ≥ 12 小时（无论白天黑夜，超长等待必须休息）
+
+不需要加住宿费的情况：
+- 直达航班/火车（无论多长时间，都在交通工具上休息）
+- 中转等待时间 < {threshold_hours} 小时 且 不跨夜间
+- 乘坐卧铺火车过夜（车票已包含住宿功能）
+
+示例：
+- 曼谷23:50→长治19:55(+1天) 直飞20小时：❌不加钱（在飞机上）
+- 北京落地02:00，等到08:00换乘：✅加¥200（等6小时且跨夜间）
+- 上午10:00到达，晚上22:00出发：✅加¥200（等12小时，超长等待）
+- 上午10:00到达，下午15:00出发：❌不加钱（白天等待5小时）
+- 北京→长治 15小时卧铺慢车：❌不加钱（在火车卧铺上睡觉）
+
+在最终推荐时，请：
+1. 计算每个方案的"真实成本" = 票价 + 住宿费（如需要）
+2. 在价格对比中注明是否包含住宿费
+3. 如有加住宿费的方案，说明原因"""
+            else:
+                accommodation_section = ""
+
             # 构建汇总分析的系统提示词
-            system_prompt = """你是 Go-home 智能出行助手。用户已经通过程序查询了多个出行方案的数据，现在需要你分析这些数据并给出推荐。
+            system_prompt = f"""你是 Go-home 智能出行助手。用户已经通过程序查询了多个出行方案的数据，现在需要你分析这些数据并给出推荐。
 
 请注意：
 1. 仔细分析直达方案和中转方案的价格、时间对比
@@ -1143,7 +1328,8 @@ class GoHomeApp(ctk.CTk):
 - ✈️→✈️：全程飞机中转
 - ✈️→🚄：先飞机后高铁
 - 🚄→✈️：先高铁后飞机
-- 🚄→🚄：全程火车中转"""
+- 🚄→🚄：全程火车中转
+{accommodation_section}"""
 
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -1340,8 +1526,12 @@ class GoHomeApp(ctk.CTk):
         self.config_manager.set("api_base_url", self.api_url_entry.get())
         self.config_manager.set("api_key", self.api_key_entry.get())
         self.config_manager.set("model", self.model_combobox.get())
+        # 保存住宿费用阈值
+        threshold_str = self.accommodation_threshold.get()
+        threshold_hours = int(threshold_str.replace(" 小时", ""))
+        self.config_manager.set("accommodation_threshold", threshold_hours)
         self.config_manager.save_config()
-        self.log_message("API 配置已保存")
+        self.log_message(f"配置已保存（住宿阈值: {threshold_hours}小时）")
 
     def fetch_available_models(self):
         """获取可用模型列表"""
@@ -1388,6 +1578,36 @@ class GoHomeApp(ctk.CTk):
 
         thread = threading.Thread(target=fetch_models, daemon=True)
         thread.start()
+
+    def toggle_accommodation(self):
+        """切换住宿费用计算开关"""
+        enabled = self.accommodation_enabled_var.get() == "on"
+        self._update_accommodation_ui_state()
+        self.config_manager.set("accommodation_enabled", enabled)
+        self.config_manager.save_config()
+        if enabled:
+            self.log_message("[设置] 已启用住宿费用计算")
+        else:
+            self.log_message("[设置] 已关闭住宿费用计算")
+
+    def _update_accommodation_ui_state(self):
+        """根据开关状态更新住宿费用相关控件的可用性"""
+        enabled = self.accommodation_enabled_var.get() == "on"
+
+        # 更新控件状态
+        self.accommodation_threshold.configure(state="readonly" if enabled else "disabled")
+
+        # 更新文本颜色
+        if enabled:
+            self.accommodation_desc.configure(text_color="gray")
+            self.threshold_label.configure(text_color=("gray10", "gray90"))
+            self.accommodation_fee_label.configure(text_color=("gray10", "gray90"))
+            self.accommodation_fee_display.configure(text_color="orange")
+        else:
+            self.accommodation_desc.configure(text_color="gray50")
+            self.threshold_label.configure(text_color="gray50")
+            self.accommodation_fee_label.configure(text_color="gray50")
+            self.accommodation_fee_display.configure(text_color="gray50")
 
     def toggle_transfer_hub_mode(self):
         """切换中转枢纽模式"""

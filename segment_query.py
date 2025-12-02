@@ -119,7 +119,8 @@ class SegmentQueryEngine:
 
     架构说明：
     - 将整个行程拆分为多个"段"
-    - 每个段独立查询（一个线程一段）
+    - 火车票查询：并行执行（12306 无严格反爬）
+    - 机票查询：串行执行（携程反爬严格，需避免并发冲突）
     - 结果收集后组合成完整路线
     """
 
@@ -141,9 +142,83 @@ class SegmentQueryEngine:
         self._station_cache: Dict[str, str] = {}
         self._station_cache_lock = threading.Lock()
 
+        # 机票服务预热状态
+        self._flight_warmed_up = False
+
     def log(self, message: str):
         """记录日志"""
         self.log_callback(message)
+
+    def warmup_flight_service(
+        self,
+        test_from: str = "北京",
+        test_to: str = "上海",
+        test_date: str = None,
+        timeout: float = 90
+    ) -> bool:
+        """
+        预热机票服务：执行一次查询以触发验证码处理
+
+        在开始批量查询前调用此方法，确保：
+        1. 浏览器 Cookie 已保存
+        2. 验证码已被用户处理
+        3. 后续查询可以正常进行
+
+        Args:
+            test_from: 测试出发城市（默认北京）
+            test_to: 测试目的城市（默认上海）
+            test_date: 测试日期（默认明天）
+            timeout: 超时时间（秒），默认90秒，需要足够时间让用户处理验证码
+
+        Returns:
+            True 如果预热成功，False 如果失败
+        """
+        if self._flight_warmed_up:
+            self.log("[预热] 机票服务已预热，跳过")
+            return True
+
+        if not self.mcp_manager.flight_running:
+            self.log("[预热] 机票服务未启动，跳过预热")
+            return False
+
+        # 默认使用明天的日期
+        if not test_date:
+            test_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        self.log(f"[预热] 开始预热机票服务（{test_from}→{test_to}），预计需要 30-60 秒...")
+        self.log("[预热] ⏳ 正在启动浏览器并加载页面...")
+        self.log("[预热] 💡 如果弹出浏览器窗口，请完成验证码验证")
+
+        try:
+            # 执行一次机票查询，触发验证码检测
+            # 给足够的时间：浏览器启动 + 页面加载 + 可能的验证码处理
+            result = self.mcp_manager.call_tool(
+                "flight_searchFlightRoutes",
+                {
+                    "departure_city": test_from,
+                    "destination_city": test_to,
+                    "departure_date": test_date
+                },
+                timeout=timeout
+            )
+
+            # 检查结果是否有效
+            if result and "超时" not in result and "error" not in result.lower():
+                self._flight_warmed_up = True
+                self.log("[预热] ✅ 机票服务预热成功！后续查询将更快")
+                return True
+            elif "超时" in result:
+                self.log("[预热] ⚠️ 预热超时，可能是页面加载较慢或验证码未处理")
+                self.log("[预热] 💡 将继续尝试查询，如遇验证码请及时处理")
+                # 超时不算完全失败，可能只是第一次慢
+                return False
+            else:
+                self.log(f"[预热] ⚠️ 预热返回异常: {result[:200] if result else '空结果'}")
+                return False
+
+        except Exception as e:
+            self.log(f"[预热] ❌ 预热失败: {str(e)}")
+            return False
 
     def get_station_code(self, city: str) -> str:
         """
@@ -362,49 +437,82 @@ class SegmentQueryEngine:
         max_workers: int = 15
     ) -> Dict[str, SegmentResult]:
         """
-        并行执行所有分段查询
+        执行所有分段查询（火车票并行，机票串行）
+
+        策略说明：
+        - 火车票查询：并行执行（12306 无严格反爬限制）
+        - 机票查询：串行执行（携程反爬严格，避免并发冲突和验证码问题）
 
         Args:
             queries: 查询请求列表
             train_date: 火车票查询日期
-            max_workers: 最大并行线程数
+            max_workers: 火车票最大并行线程数
 
         Returns:
             segment_id -> SegmentResult 的映射
         """
         self._segment_results.clear()
+
+        # 分离机票和火车票查询
+        flight_queries = [q for q in queries if q.mode == TransportMode.FLIGHT]
+        train_queries = [q for q in queries if q.mode == TransportMode.TRAIN]
+
         total = len(queries)
         completed = [0]
 
-        def query_worker(query: SegmentQuery) -> SegmentResult:
-            """单个查询的工作函数"""
-            mode_icon = "✈️" if query.mode == TransportMode.FLIGHT else "🚄"
-            self.log(f"[{mode_icon} {query.from_city}→{query.to_city}] 开始查询...")
+        self.log(f"[查询引擎] 共 {total} 个查询任务（✈️机票 {len(flight_queries)} 个串行，🚄火车票 {len(train_queries)} 个并行）")
 
-            result = self.query_single_segment(query, train_date)
-
-            # 更新进度
+        def update_progress(query: SegmentQuery, result: SegmentResult):
+            """更新进度"""
             with self._results_lock:
                 completed[0] += 1
                 self._segment_results[result.segment_id] = result
 
+            mode_icon = "✈️" if query.mode == TransportMode.FLIGHT else "🚄"
             status = "✅" if result.success else "❌"
             self.log(f"[{mode_icon} {query.from_city}→{query.to_city}] {status} ({result.query_time:.1f}s)")
             self.progress_callback(completed[0], total, f"{query.from_city}→{query.to_city}")
 
-            return result
+        # 第一阶段：并行执行火车票查询
+        if train_queries:
+            self.log(f"[查询引擎] 🚄 开始并行查询 {len(train_queries)} 个火车票...")
 
-        self.log(f"[查询引擎] 启动 {total} 个并行查询任务...")
+            def train_worker(query: SegmentQuery) -> SegmentResult:
+                self.log(f"[🚄 {query.from_city}→{query.to_city}] 开始查询...")
+                result = self.query_single_segment(query, train_date)
+                update_progress(query, result)
+                return result
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(query_worker, q): q for q in queries}
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(train_worker, q): q for q in train_queries}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        query = futures[future]
+                        self.log(f"[查询引擎] {query.segment_id} 异常: {e}")
 
-            for future in as_completed(futures):
+        # 第二阶段：串行执行机票查询
+        if flight_queries:
+            self.log(f"[查询引擎] ✈️ 开始串行查询 {len(flight_queries)} 个机票（避免验证码冲突）...")
+
+            for i, query in enumerate(flight_queries, 1):
+                self.log(f"[✈️ {query.from_city}→{query.to_city}] 开始查询 ({i}/{len(flight_queries)})...")
                 try:
-                    future.result()
+                    result = self.query_single_segment(query, train_date)
+                    update_progress(query, result)
                 except Exception as e:
-                    query = futures[future]
                     self.log(f"[查询引擎] {query.segment_id} 异常: {e}")
+                    # 创建失败结果
+                    result = SegmentResult(
+                        segment_id=query.segment_id,
+                        from_city=query.from_city,
+                        to_city=query.to_city,
+                        mode=query.mode,
+                        success=False,
+                        error=str(e)
+                    )
+                    update_progress(query, result)
 
         self.log(f"[查询引擎] 所有查询完成，成功 {sum(1 for r in self._segment_results.values() if r.success)}/{total}")
 

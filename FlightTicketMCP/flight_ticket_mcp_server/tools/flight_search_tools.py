@@ -367,22 +367,68 @@ class FlightRouteSearcher:
         # 访问页面
         self.page.get(url)
 
-        # 等待用户处理验证码（最多等待60秒）
-        logger.info("等待验证码处理（最多60秒）...")
+        # 等待页面加载或用户处理验证码（最多等待60秒）
+        logger.info("等待页面加载或验证码处理（最多60秒）...")
         for i in range(60):
             time.sleep(1)
-            # 检查是否有航班列表出现
-            flight_items = self.page.eles('css:.flight-item', timeout=1)
-            if len(flight_items) > 0:
-                logger.info(f"验证码已处理，检测到 {len(flight_items)} 个航班")
-                return
-            # 检查验证码是否还存在
-            if not self._detect_captcha():
-                logger.info("验证码已处理完成")
-                time.sleep(3)  # 额外等待页面加载
-                return
 
-        logger.warning("验证码处理超时")
+            # 检查是否有航班列表出现
+            try:
+                flight_items = self.page.eles('css:.flight-item', timeout=1)
+                if len(flight_items) > 0:
+                    logger.info(f"页面加载成功，检测到 {len(flight_items)} 个航班")
+                    return
+            except:
+                pass
+
+            # 检查页面是否已经加载完成（有航班容器但可能还在加载数据）
+            try:
+                body_wrapper = self.page.ele('css:.body-wrapper', timeout=1)
+                if body_wrapper:
+                    # 页面结构已加载，检查是否有验证码
+                    if not self._detect_captcha_fast():
+                        logger.info("页面结构已加载，无验证码，继续等待航班数据...")
+                        # 再等待几秒让航班数据加载
+                        time.sleep(5)
+                        return
+            except:
+                pass
+
+            # 每10秒输出一次日志
+            if i > 0 and i % 10 == 0:
+                logger.info(f"仍在等待页面加载... ({i}/60秒)")
+
+        logger.warning("页面加载超时")
+
+    def _detect_captcha_fast(self) -> bool:
+        """
+        快速检测验证码（不包含 sleep）
+
+        Returns:
+            True 如果检测到验证码
+        """
+        # 检查常见的验证码元素
+        captcha_selectors = [
+            'css:.captcha',
+            'css:#captcha',
+            'css:.verify',
+            'css:#verify',
+            'css:.slide-verify',
+            'css:.nc-container',
+            'css:#nc_1_wrapper',
+            'css:.geetest',
+        ]
+
+        for selector in captcha_selectors:
+            try:
+                element = self.page.ele(selector, timeout=0.5)
+                if element:
+                    logger.warning(f"检测到验证码元素: {selector}")
+                    return True
+            except:
+                pass
+
+        return False
 
     def _intelligent_scroll_for_content(self):
         """智能滚动以加载更多航班内容"""
