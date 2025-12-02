@@ -1,15 +1,3 @@
-2025/12/02-20:12:44.632 a5e4 Reusing MANIFEST F:\Go-home\Go-home\FlightTicketMCP\browser_data\Default\Local Storage\leveldb/MANIFEST-000001
-2025/12/02-20:12:44.635 a5e4 Recovering log #61
-2025/12/02-20:12:44.636 a5e4 Reusing old log F:\Go-home\Go-home\FlightTicketMCP\browser_data\Default\Local Storage\leveldb/000061.log 
-2025/12/02-20:13:13.122 5418 Level-0 table #65: started
-2025/12/02-20:13:13.124 5418 Level-0 table #65: 12719 bytes OK
-2025/12/02-20:13:13.125 5418 Delete type=0 #61
-2025/12/02-20:13:13.125 5418 Compacting 4@0 + 1@1 files
-2025/12/02-20:13:13.127 5418 Generated table #66@0: 27 keys, 28424 bytes
-2025/12/02-20:13:13.127 5418 Compacted 4@0 + 1@1 files => 28424 bytes
-2025/12/02-20:13:13.127 5418 compacted to: files[ 0 1 0 0 0 0 0 ]
-2025/12/02-20:13:13.128 5418 Delete type=2 #53
-2025/12/02-20:13:13.128 5418 Delete type=2 #56
-2025/12/02-20:13:13.128 5418 Delete type=2 #59
-2025/12/02-20:13:13.128 5418 Delete type=2 #62
-2025/12/02-20:13:13.128 5418 Delete type=2 #65
+2025/12/02-23:28:03.441 b104 Reusing MANIFEST F:\Go-home\Go-home\FlightTicketMCP\browser_data\Default\Local Storage\leveldb/MANIFEST-000001
+2025/12/02-23:28:03.445 b104 Recovering log #237
+2025/12/02-23:28:03.446 b104 Reusing old log F:\Go-home\Go-home\FlightTicketMCP\browser_data\Default\Local Storage\leveldb/000237.log 

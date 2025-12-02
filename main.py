@@ -17,6 +17,7 @@ from openai import OpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from tkinter import messagebox
+from tkcalendar import DateEntry
 
 # 导入中转枢纽模块
 from transfer_hubs import get_transfer_hub_prompt, hub_manager
@@ -519,14 +520,50 @@ class GoHomeApp(ctk.CTk):
         )
         self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5)
 
+        # 中转枢纽数量选择
+        self.hub_count_frame = ctk.CTkFrame(
+            self.hub_mode_frame,
+            fg_color="transparent"
+        )
+        self.hub_count_frame.grid(row=2, column=0, padx=10, pady=5)
+
+        self.hub_count_label = ctk.CTkLabel(
+            self.hub_count_frame,
+            text="枢纽数量:",
+            font=ctk.CTkFont(size=12)
+        )
+        self.hub_count_label.grid(row=0, column=0, padx=(0, 5))
+
+        # 枢纽数量选项：8个(快速)、20个(推荐)、44个(全面)
+        self.hub_count_var = ctk.StringVar(value="20")
+        self.hub_count_menu = ctk.CTkOptionMenu(
+            self.hub_count_frame,
+            variable=self.hub_count_var,
+            values=["8", "20", "44"],
+            width=60,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            command=self.on_hub_count_changed
+        )
+        self.hub_count_menu.grid(row=0, column=1, padx=5)
+
+        # 预计时间提示
+        self.hub_time_label = ctk.CTkLabel(
+            self.hub_count_frame,
+            text="≈20-40分钟",
+            font=ctk.CTkFont(size=11),
+            text_color="orange"
+        )
+        self.hub_time_label.grid(row=0, column=2, padx=(5, 0))
+
         # 中转模式状态提示
         self.hub_mode_status = ctk.CTkLabel(
             self.hub_mode_frame,
-            text="当前：标准模式（仅查直达）",
+            text="当前：标准模式（AI自动选择中转）",
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.hub_mode_status.grid(row=2, column=0, padx=10, pady=(0, 10))
+        self.hub_mode_status.grid(row=3, column=0, padx=10, pady=(0, 10))
 
         # 住宿费用设置区 - 使用卡片样式
         self.accommodation_frame = ctk.CTkFrame(
@@ -790,11 +827,37 @@ class GoHomeApp(ctk.CTk):
         date_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         date_frame.grid(row=2, column=1, padx=(10, 0), pady=5, sticky="w")
 
-        # 默认日期为明天
-        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        self.date_entry = ctk.CTkEntry(date_frame, placeholder_text="YYYY-MM-DD", width=150)
-        self.date_entry.insert(0, tomorrow)
-        self.date_entry.grid(row=0, column=0)
+        # 日期选择器 - 只允许选择今天及以后的日期
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+
+        # 深色主题配色
+        self.date_entry = DateEntry(
+            date_frame,
+            width=18,
+            background='#1f538d',      # 日历选中日期背景色
+            foreground='white',         # 日历选中日期文字色
+            headersbackground='#2b2b2b', # 日历头部背景
+            headersforeground='white',   # 日历头部文字
+            normalbackground='#333333',  # 日历普通日期背景
+            normalforeground='white',    # 日历普通日期文字
+            weekendbackground='#3d3d3d', # 周末背景
+            weekendforeground='#aaaaaa', # 周末文字
+            othermonthbackground='#252525', # 其他月份背景
+            othermonthforeground='#666666', # 其他月份文字
+            othermonthwebackground='#252525', # 其他月份周末背景
+            othermonthweforeground='#555555', # 其他月份周末文字
+            selectbackground='#1f538d',  # 选中背景
+            selectforeground='white',    # 选中文字
+            borderwidth=2,
+            year=tomorrow.year,
+            month=tomorrow.month,
+            day=tomorrow.day,
+            mindate=today,  # 最小日期为今天，不设置maxdate允许选择任意未来日期
+            date_pattern='yyyy-mm-dd',  # 日期格式
+            font=('Microsoft YaHei', 11)
+        )
+        self.date_entry.grid(row=0, column=0, pady=2)
 
         # 右侧：偏好设置
         right_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
@@ -1116,7 +1179,7 @@ class GoHomeApp(ctk.CTk):
         # 验证输入
         from_city = self.from_city_entry.get().strip()
         to_city = self.to_city_entry.get().strip()
-        date = self.date_entry.get().strip()
+        date = self.date_entry.get()  # DateEntry 返回格式化日期字符串
 
         if not from_city:
             self.show_result("⚠️ 请输入出发城市")
@@ -1181,12 +1244,15 @@ class GoHomeApp(ctk.CTk):
         """
         transport = self.transport_var.get()
 
+        # 获取用户选择的中转枢纽数量
+        hub_count = int(self.hub_count_var.get())
+
         # 获取推荐的中转枢纽城市
-        hub_cities = hub_manager.get_recommended_transfer_cities(transport, max_count=8)
+        hub_cities = hub_manager.get_recommended_transfer_cities(transport, max_count=hub_count)
         hub_cities = [h for h in hub_cities if h != from_city and h != to_city]
 
-        self.after(0, lambda: self.log_message(f"[分段查询] 准备查询，中转城市: {', '.join(hub_cities)}"))
-        self.after(0, lambda: self.append_result(f"\n\n🚀 启动分段查询引擎...\n中转枢纽: {', '.join(hub_cities)}"))
+        self.after(0, lambda: self.log_message(f"[分段查询] 准备查询，中转城市({len(hub_cities)}个): {', '.join(hub_cities)}"))
+        self.after(0, lambda: self.append_result(f"\n\n🚀 启动分段查询引擎...\n中转枢纽({len(hub_cities)}个): {', '.join(hub_cities)}"))
 
         # 创建分段查询引擎
         def log_callback(msg):
@@ -1229,10 +1295,11 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda n=len(queries): self.append_result(f"\n📊 共 {n} 个分段查询任务，开始执行..."))
 
             # 执行所有查询（火车票并行，机票串行）
+            # 火车票并发数降到 5，避免触发 12306 限制
             results = engine.execute_parallel_queries(
                 queries=queries,
                 train_date=train_date,
-                max_workers=15
+                max_workers=5
             )
 
             # 组合所有可能的路线
@@ -1645,10 +1712,24 @@ class GoHomeApp(ctk.CTk):
         else:
             self.transfer_hub_mode = False
             self.hub_mode_status.configure(
-                text="当前：标准模式（仅查直达）",
+                text="当前：标准模式（AI自动选择中转）",
                 text_color="gray"
             )
             self.log_message("[模式] 已切换回标准模式")
+
+    def on_hub_count_changed(self, value: str):
+        """枢纽数量选择变化时更新时间提示"""
+        time_estimates = {
+            "8": ("≈10-15分钟", "green"),
+            "20": ("≈20-40分钟", "orange"),
+            "44": ("≈50-90分钟", "red")
+        }
+        time_text, color = time_estimates.get(value, ("≈20-40分钟", "orange"))
+        self.hub_time_label.configure(text=time_text, text_color=color)
+
+        # 如果已启用中转模式，记录日志
+        if self.transfer_hub_mode:
+            self.log_message(f"[模式] 枢纽数量已调整为 {value} 个，预计耗时 {time_text}")
 
     def change_theme(self, theme: str):
         """切换主题"""
