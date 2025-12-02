@@ -384,8 +384,8 @@ class GoHomeApp(ctk.CTk):
         # 查询状态
         self.is_querying = False
 
-        # 中转枢纽模式状态（默认关闭）
-        self.transfer_hub_mode = False
+        # 中转枢纽模式状态（默认开启）
+        self.transfer_hub_mode = True
 
         # 创建 UI
         self.create_ui()
@@ -507,8 +507,8 @@ class GoHomeApp(ctk.CTk):
         )
         self.hub_mode_label.grid(row=0, column=0, padx=10, pady=(10, 5))
 
-        # 中转模式开关
-        self.hub_mode_switch_var = ctk.StringVar(value="off")
+        # 中转模式开关（默认开启）
+        self.hub_mode_switch_var = ctk.StringVar(value="on")
         self.hub_mode_switch = ctk.CTkSwitch(
             self.hub_mode_frame,
             text="启用中转枢纽",
@@ -519,6 +519,7 @@ class GoHomeApp(ctk.CTk):
             font=ctk.CTkFont(size=13)
         )
         self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5)
+        self.hub_mode_switch.select()  # 默认选中
 
         # 中转枢纽数量选择
         self.hub_count_frame = ctk.CTkFrame(
@@ -556,14 +557,23 @@ class GoHomeApp(ctk.CTk):
         )
         self.hub_time_label.grid(row=0, column=2, padx=(5, 0))
 
-        # 中转模式状态提示
-        self.hub_mode_status = ctk.CTkLabel(
+        # 枢纽选择提示
+        self.hub_tip_label = ctk.CTkLabel(
             self.hub_mode_frame,
-            text="当前：标准模式（AI自动选择中转）",
-            font=ctk.CTkFont(size=11),
+            text="💡 选44个可获得最低价格",
+            font=ctk.CTkFont(size=10),
             text_color="gray"
         )
-        self.hub_mode_status.grid(row=3, column=0, padx=10, pady=(0, 10))
+        self.hub_tip_label.grid(row=3, column=0, padx=10, pady=(0, 5))
+
+        # 中转模式状态提示（默认显示枢纽模式已开启）
+        self.hub_mode_status = ctk.CTkLabel(
+            self.hub_mode_frame,
+            text="当前：枢纽模式（查中转）",
+            font=ctk.CTkFont(size=11),
+            text_color="green"
+        )
+        self.hub_mode_status.grid(row=4, column=0, padx=10, pady=(0, 10))
 
         # 住宿费用设置区 - 使用卡片样式
         self.accommodation_frame = ctk.CTkFrame(
