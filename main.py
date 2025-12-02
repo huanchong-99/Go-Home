@@ -794,12 +794,30 @@ class GoHomeApp(ctk.CTk):
             "long": "用户可以接受长途行程，即使需要超过24小时也可以接受，包括中转、换乘等复杂方案。"
         }[duration]
 
+        # 获取当前日期用于12306查询限制计算
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        max_train_date = today + timedelta(days=14)  # 12306只能查15天内（含当天）
+        today_str = today.strftime("%Y-%m-%d")
+        max_train_date_str = max_train_date.strftime("%Y-%m-%d")
+
         return f"""你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
+
+【当前时间】
+今天是 {today_str}
 
 【用户偏好】
 {priority_text}
 {transport_text}
 {duration_text}
+
+【重要：12306火车票查询限制】
+12306系统只能查询15天内（含当天）的火车票，即 {today_str} 至 {max_train_date_str}。
+- 如果用户查询的日期超出此范围，请使用 {max_train_date_str} 作为查询日期
+- 但在输出结果时，必须明确提示用户：
+  "⚠️ 注意：12306仅支持查询15天内的车票。您查询的日期超出范围，以下展示的是 {max_train_date_str} 的班次信息作为参考。
+  铁路班次时刻表通常固定不变，票价在非节假日期间也基本稳定，实际购票时请以12306官方为准。"
+- 机票查询不受此限制，可以查询更远日期
 
 【重要：工具调用参数格式】
 调用工具时必须传递正确的参数，以下是具体示例：
