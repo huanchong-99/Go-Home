@@ -10,11 +10,23 @@ import asyncio
 import json
 import os
 import queue
+# ThreadPoolExecutor 已移至 segment_query.py
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from openai import OpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from tkinter import messagebox
+
+# 导入中转枢纽模块
+from transfer_hubs import get_transfer_hub_prompt, hub_manager
+
+# 导入分段查询引擎
+from segment_query import (
+    SegmentQueryEngine,
+    calculate_adjusted_train_date
+)
+
 
 
 # Conda 环境配置
@@ -371,6 +383,9 @@ class GoHomeApp(ctk.CTk):
         # 查询状态
         self.is_querying = False
 
+        # 中转枢纽模式状态（默认关闭）
+        self.transfer_hub_mode = False
+
         # 创建 UI
         self.create_ui()
 
@@ -462,9 +477,42 @@ class GoHomeApp(ctk.CTk):
         )
         self.stop_all_btn.grid(row=4, column=0, padx=10, pady=(0, 10), sticky="ew")
 
+        # 中转枢纽模式切换区
+        self.hub_mode_frame = ctk.CTkFrame(self.sidebar)
+        self.hub_mode_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+
+        self.hub_mode_label = ctk.CTkLabel(
+            self.hub_mode_frame,
+            text="智能中转模式",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.hub_mode_label.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
+
+        # 中转模式开关
+        self.hub_mode_switch_var = ctk.StringVar(value="off")
+        self.hub_mode_switch = ctk.CTkSwitch(
+            self.hub_mode_frame,
+            text="启用中转枢纽",
+            variable=self.hub_mode_switch_var,
+            onvalue="on",
+            offvalue="off",
+            command=self.toggle_transfer_hub_mode,
+            font=ctk.CTkFont(size=13)
+        )
+        self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        # 中转模式状态提示
+        self.hub_mode_status = ctk.CTkLabel(
+            self.hub_mode_frame,
+            text="当前：标准模式（仅查直达）",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        self.hub_mode_status.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="w")
+
         # API 配置区
         self.api_frame = ctk.CTkFrame(self.sidebar)
-        self.api_frame.grid(row=3, column=0, padx=15, pady=10, sticky="ew")
+        self.api_frame.grid(row=4, column=0, padx=15, pady=10, sticky="ew")
 
         self.api_label = ctk.CTkLabel(
             self.api_frame,
@@ -690,6 +738,47 @@ class GoHomeApp(ctk.CTk):
         )
         self.clear_btn.pack(side="left", padx=10)
 
+        # 进度条区域
+        self.progress_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
+        self.progress_frame.grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky="ew")
+        self.progress_frame.grid_columnconfigure(1, weight=1)
+
+        # 进度标签
+        self.progress_label = ctk.CTkLabel(
+            self.progress_frame,
+            text="",
+            font=ctk.CTkFont(size=13)
+        )
+        self.progress_label.grid(row=0, column=0, padx=(0, 10), sticky="w")
+
+        # 进度条
+        self.progress_bar = ctk.CTkProgressBar(
+            self.progress_frame,
+            height=15,
+            corner_radius=5
+        )
+        self.progress_bar.grid(row=0, column=1, sticky="ew")
+        self.progress_bar.set(0)
+
+        # 初始隐藏进度条
+        self.progress_frame.grid_remove()
+
+    def show_progress(self, current: int, total: int, text: str = ""):
+        """显示进度条"""
+        self.progress_frame.grid()
+        progress = current / total if total > 0 else 0
+        self.progress_bar.set(progress)
+        if text:
+            self.progress_label.configure(text=f"{text} ({current}/{total})")
+        else:
+            self.progress_label.configure(text=f"进度: {current}/{total}")
+
+    def hide_progress(self):
+        """隐藏进度条"""
+        self.progress_frame.grid_remove()
+        self.progress_bar.set(0)
+        self.progress_label.configure(text="")
+
     def create_result_area(self):
         """创建结果展示区域"""
         self.result_frame = ctk.CTkFrame(self.main_frame)
@@ -801,17 +890,37 @@ class GoHomeApp(ctk.CTk):
         today_str = today.strftime("%Y-%m-%d")
         max_train_date_str = max_train_date.strftime("%Y-%m-%d")
 
-        return f"""你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
+        # 获取中转枢纽模式的提示词补充
+        transfer_hub_prompt = get_transfer_hub_prompt(transport, self.transfer_hub_mode)
+
+        base_prompt = f"""你是 Go-home 智能出行助手，专门帮助用户查询机票和火车票信息，规划回家的最优路线。
 
 【当前时间】
 今天是 {today_str}
+
+【重要：服务覆盖范围】
+1. **机票服务（FlightTicketMCP）**：
+   - ✅ 支持国际航班和国内航班
+   - ✅ 覆盖全球主要城市（北京、上海、曼谷、新加坡、东京、纽约等）
+   - ✅ 可查询任意日期的航班
+
+2. **火车票服务（12306-MCP）**：
+   - ✅ 仅支持中国国内火车票
+   - ❌ 不支持国际城市（如曼谷、新加坡等无中国火车站）
+   - ⚠️ 仅能查询15天内的车票
+
+【国际出行规划策略】
+当出发地或目的地包含国际城市时：
+- 国际城市 → 国内城市：先查机票到达国内枢纽（如北京、上海、广州）
+- 国内枢纽 → 最终目的地：可查机票或火车票
+- 例如：曼谷→长治 = 曼谷✈️北京 + 北京🚄长治
 
 【用户偏好】
 {priority_text}
 {transport_text}
 {duration_text}
 
-【重要：12306火车票查询限制】
+【12306火车票查询限制】
 12306系统只能查询15天内（含当天）的火车票，即 {today_str} 至 {max_train_date_str}。
 - 如果用户查询的日期超出此范围，请使用 {max_train_date_str} 作为查询日期
 - 但在输出结果时，必须明确提示用户：
@@ -834,10 +943,19 @@ class GoHomeApp(ctk.CTk):
    工具: flight_searchFlightRoutes
    参数: {{"departCity": "北京", "arriveCity": "上海", "departDate": "2025-01-15"}}
 
+4. 查询中转机票（需指定中转城市）：
+   工具: flight_getTransferFlightsByThreePlace
+   参数: {{"departCity": "北京", "transferCity": "郑州", "arriveCity": "上海", "departDate": "2025-01-15"}}
+
+5. 查询火车票中转方案：
+   工具: train_get-interline-tickets
+   参数: {{"date": "2025-01-15", "fromStation": "BJP", "toStation": "CZH", "transferStation": "ZZF"}}
+
 【工具使用流程】
 - 火车票查询：先用 train_get-station-code-of-citys 获取站点代码，再用 train_get-tickets 查询
 - 机票查询：直接用 flight_searchFlightRoutes，城市名使用中文
-
+- 中转查询：需要指定中转城市/车站
+{transfer_hub_prompt}
 【输出要求】
 1. 根据查询结果，整理出清晰的票务信息
 2. 按照用户偏好排序推荐方案
@@ -845,6 +963,8 @@ class GoHomeApp(ctk.CTk):
 4. 列出每个方案的关键信息：出发时间、到达时间、历时、价格
 5. 使用友好的中文回复，格式清晰易读
 6. 如果有多个好的选择，最多推荐3个最佳方案"""
+
+        return base_prompt
 
     def start_query(self):
         """开始查询"""
@@ -892,8 +1012,161 @@ class GoHomeApp(ctk.CTk):
         self.log_message(f"[查询] {from_city} → {to_city}, 日期: {date}")
 
         # 异步调用 AI
-        thread = threading.Thread(target=self.call_ai_api, args=(user_message,), daemon=True)
+        if self.transfer_hub_mode:
+            # 中转枢纽模式：程序主动遍历枢纽查询
+            thread = threading.Thread(
+                target=self.call_ai_with_hub_query,
+                args=(from_city, to_city, date),
+                daemon=True
+            )
+        else:
+            # 标准模式：让 AI 自己决定查询
+            thread = threading.Thread(target=self.call_ai_api, args=(user_message,), daemon=True)
         thread.start()
+
+    def call_ai_with_hub_query(self, from_city: str, to_city: str, date: str):
+        """
+        中转枢纽模式：使用分段查询引擎进行多线程并行查询
+
+        新架构说明：
+        - 每个线程只负责查询一段行程 (A→B)
+        - 支持跨模式组合：✈️→✈️、✈️→🚄、🚄→✈️、🚄→🚄
+        - 结果存储后由程序组合出所有可能的路线
+        - 最后让 AI 分析推荐最优方案
+        """
+        transport = self.transport_var.get()
+
+        # 获取推荐的中转枢纽城市
+        hub_cities = hub_manager.get_recommended_transfer_cities(transport, max_count=8)
+        hub_cities = [h for h in hub_cities if h != from_city and h != to_city]
+
+        self.after(0, lambda: self.log_message(f"[分段查询] 准备查询，中转城市: {', '.join(hub_cities)}"))
+        self.after(0, lambda: self.append_result(f"\n\n🚀 启动分段查询引擎...\n中转枢纽: {', '.join(hub_cities)}"))
+
+        # 创建分段查询引擎
+        def log_callback(msg):
+            self.after(0, lambda m=msg: self.log_message(m))
+
+        def progress_callback(current, total, desc):
+            self.after(0, lambda c=current, t=total, d=desc: self.show_progress(c, t, f"🔍 {d}"))
+
+        engine = SegmentQueryEngine(
+            mcp_manager=self.mcp_manager,
+            log_callback=log_callback,
+            progress_callback=progress_callback
+        )
+
+        try:
+            # 处理火车票日期限制
+            train_date = calculate_adjusted_train_date(date)
+            if train_date != date:
+                self.after(0, lambda td=train_date: self.log_message(
+                    f"[分段查询] 火车票日期调整为 {td}（12306 15天限制）"))
+
+            # 构建所有分段查询请求
+            queries = engine.build_segment_queries(
+                origin=from_city,
+                destination=to_city,
+                date=date,
+                hub_cities=hub_cities,
+                include_direct=True,
+                transport_filter=transport
+            )
+
+            self.after(0, lambda n=len(queries): self.log_message(f"[分段查询] 共 {n} 个分段查询任务"))
+            self.after(0, lambda n=len(queries): self.append_result(f"\n📊 共 {n} 个分段查询任务，开始并行执行..."))
+
+            # 并行执行所有查询
+            results = engine.execute_parallel_queries(
+                queries=queries,
+                train_date=train_date,
+                max_workers=15
+            )
+
+            # 组合所有可能的路线
+            routes = engine.combine_routes(
+                origin=from_city,
+                destination=to_city,
+                hub_cities=hub_cities,
+                results=results
+            )
+
+            self.after(0, lambda n=len(routes): self.log_message(f"[分段查询] 组合出 {n} 条可行路线"))
+            self.after(0, lambda n=len(routes): self.append_result(f"\n\n🛤️ 组合出 {n} 条可行路线，正在让 AI 分析..."))
+
+            # 构建给 AI 的汇总消息
+            summary_message = engine.build_summary_for_ai(
+                origin=from_city,
+                destination=to_city,
+                date=date,
+                routes=routes,
+                results=results
+            )
+
+            # 调用 AI 分析
+            self._call_ai_for_summary(summary_message)
+
+        except Exception as e:
+            error_msg = f"⚠️ 分段查询失败: {str(e)}"
+            self.after(0, lambda msg=error_msg: self.show_result(msg))
+            self.after(0, lambda err=str(e): self.log_message(f"[分段查询] 错误: {err}"))
+        finally:
+            self.after(0, self.hide_progress)
+            self.after(0, lambda: self.query_btn.configure(state="normal", text="🔍 开始查询"))
+            self.is_querying = False
+
+    def _call_ai_for_summary(self, summary_message: str):
+        """调用 AI 对查询结果进行汇总分析"""
+        api_key = self.api_key_entry.get()
+        base_url = self.api_url_entry.get()
+        model = self.model_combobox.get()
+
+        try:
+            client = OpenAI(api_key=api_key, base_url=base_url)
+
+            # 构建汇总分析的系统提示词
+            system_prompt = """你是 Go-home 智能出行助手。用户已经通过程序查询了多个出行方案的数据，现在需要你分析这些数据并给出推荐。
+
+请注意：
+1. 仔细分析直达方案和中转方案的价格、时间对比
+2. 中转方案支持跨模式组合（如：飞机+高铁、高铁+飞机等）
+3. 中转方案要考虑换乘等待时间，建议预留 2-3 小时
+4. 推荐时要给出具体的推荐理由
+5. 使用清晰的格式，包含表格对比
+6. 如果某些查询结果为空或报错，请忽略该方案
+7. 国际城市（如曼谷）无法查询火车票，这是正常的
+
+【12306查询限制说明】
+火车票数据可能是15天内的参考数据，实际购票以12306为准。
+
+【跨模式中转说明】
+- ✈️→✈️：全程飞机中转
+- ✈️→🚄：先飞机后高铁
+- 🚄→✈️：先高铁后飞机
+- 🚄→🚄：全程火车中转"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": summary_message}
+            ]
+
+            self.after(0, lambda: self.log_message("[AI] 正在分析汇总结果..."))
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.7
+            )
+
+            final_content = response.choices[0].message.content or "抱歉，无法生成分析结果。"
+
+            self.after(0, lambda msg=final_content: self.show_result(msg))
+            self.after(0, lambda: self.log_message("[AI] 汇总分析完成"))
+
+        except Exception as e:
+            error_msg = f"⚠️ AI 分析失败: {str(e)}"
+            self.after(0, lambda msg=error_msg: self.show_result(msg))
+            self.after(0, lambda err=str(e): self.log_message(f"[AI] 汇总分析错误: {err}"))
 
     def call_ai_api(self, user_message: str):
         """调用 AI API 获取回复，支持 Function Calling"""
@@ -930,10 +1203,13 @@ class GoHomeApp(ctk.CTk):
             # 循环处理，直到 AI 不再调用工具
             max_iterations = 10
             iteration = 0
+            total_tool_calls = 0
 
             while iteration < max_iterations:
                 iteration += 1
                 self.after(0, lambda it=iteration: self.log_message(f"[AI] 第 {it} 轮对话"))
+                self.after(0, lambda it=iteration, tc=total_tool_calls: self.show_progress(
+                    it, max_iterations, f"🤖 AI对话中 (已调用{tc}个工具)"))
 
                 # 调用 AI API
                 if has_tools:
@@ -980,7 +1256,10 @@ class GoHomeApp(ctk.CTk):
                         except json.JSONDecodeError:
                             tool_args = {}
 
+                        total_tool_calls += 1
                         self.after(0, lambda tn=tool_name, ta=str(tool_args): self.log_message(f"[MCP] 调用工具: {tn}, 参数: {ta}"))
+                        self.after(0, lambda it=iteration, tc=total_tool_calls: self.show_progress(
+                            it, max_iterations, f"🤖 AI对话中 (已调用{tc}个工具)"))
 
                         # 调用 MCP 工具
                         tool_result = self.mcp_manager.call_tool(tool_name, tool_args)
@@ -1019,7 +1298,8 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda err=error_str: self.log_message(f"[AI] 错误: {err}"))
 
         finally:
-            # 恢复查询按钮
+            # 隐藏进度条并恢复查询按钮
+            self.after(0, self.hide_progress)
             self.after(0, lambda: self.query_btn.configure(state="normal", text="🔍 开始查询"))
             self.is_querying = False
 
@@ -1108,6 +1388,47 @@ class GoHomeApp(ctk.CTk):
 
         thread = threading.Thread(target=fetch_models, daemon=True)
         thread.start()
+
+    def toggle_transfer_hub_mode(self):
+        """切换中转枢纽模式"""
+        new_mode = self.hub_mode_switch_var.get() == "on"
+
+        if new_mode:
+            # 显示确认弹窗
+            result = messagebox.askyesno(
+                "启用中转枢纽模式",
+                "🚉 中转枢纽模式说明\n\n"
+                "开启后，系统将自动通过主要交通枢纽查询中转方案：\n\n"
+                "✅ 优点：\n"
+                "  • 可能找到更便宜的组合票价\n"
+                "  • 覆盖无直达线路的情况\n"
+                "  • 智能推荐最优中转城市\n\n"
+                "⚠️ 注意：\n"
+                "  • API 调用次数将显著增加（约2-3倍）\n"
+                "  • 查询时间会相应延长\n"
+                "  • 会消耗更多的 API 费用\n\n"
+                "是否确认启用？",
+                icon="question"
+            )
+
+            if result:
+                self.transfer_hub_mode = True
+                self.hub_mode_status.configure(
+                    text="当前：枢纽模式（查中转）",
+                    text_color="green"
+                )
+                self.log_message("[模式] 已启用中转枢纽模式")
+            else:
+                # 用户取消，恢复开关状态
+                self.hub_mode_switch_var.set("off")
+                self.hub_mode_switch.deselect()
+        else:
+            self.transfer_hub_mode = False
+            self.hub_mode_status.configure(
+                text="当前：标准模式（仅查直达）",
+                text_color="gray"
+            )
+            self.log_message("[模式] 已切换回标准模式")
 
     def change_theme(self, theme: str):
         """切换主题"""
