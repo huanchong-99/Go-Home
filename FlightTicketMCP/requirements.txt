@@ -1,0 +1,10 @@
+fastmcp>=2.8.0
+pydantic>=2.0.0
+requests>=2.31.0
+python-dateutil>=2.8.0
+pytz>=2023.3
+uvicorn>=0.23.0
+fastapi>=0.100.0
+DrissionPage>=4.0.0
+selenium>=4.0.0
+geopy>=2.3.0

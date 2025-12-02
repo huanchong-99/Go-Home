@@ -1,0 +1,27 @@
+# 包含基本项目文件
+include README.md
+include LICENSE
+include requirements.txt
+include mcp-config.json
+
+# 包含配置文件
+include pyproject.toml
+
+# 包含所有Python文件
+recursive-include flight_ticket_mcp_server *.py
+
+# 包含数据文件
+recursive-include flight_ticket_mcp_server *.json
+recursive-include flight_ticket_mcp_server *.txt
+
+# 排除不需要的文件
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *~
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.log
+recursive-exclude logs *
+recursive-exclude tests *
+recursive-exclude .idea *

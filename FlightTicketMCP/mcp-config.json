@@ -1,0 +1,84 @@
+{
+  "description": "Flight Ticket MCP Server 配置示例",
+  "configurations": {
+    "sse": {
+      "description": "Server-Sent Events模式 - 默认模式，适用于Web应用",
+      "config": {
+        "mcpServers": {
+          "flight-ticket-server": {
+            "command": "python",
+            "args": ["flight_ticket_server.py"],
+            "env": {
+              "MCP_TRANSPORT": "sse",
+              "MCP_HOST": "127.0.0.1",
+              "MCP_PORT": "8000",
+              "MCP_SSE_PATH": "/sse",
+              "MCP_DEBUG": "false"
+            }
+          }
+        }
+      }
+    },
+    "stdio": {
+      "description": "标准输入输出模式 - 适用于Claude Desktop",
+      "config": {
+        "mcpServers": {
+          "flight-ticket-server": {
+            "command": "python",
+            "args": ["flight_ticket_server.py"],
+            "env": {
+              "MCP_TRANSPORT": "stdio",
+              "MCP_DEBUG": "false"
+            }
+          }
+        }
+      }
+    },
+    "http": {
+      "description": "HTTP流式传输模式 - 适用于HTTP客户端",
+      "config": {
+        "mcpServers": {
+          "flight-ticket-server": {
+            "command": "python",
+            "args": ["flight_ticket_server.py"],
+            "env": {
+              "MCP_TRANSPORT": "streamable-http",
+              "MCP_HOST": "127.0.0.1",
+              "MCP_PORT": "8000",
+              "MCP_PATH": "/mcp",
+              "MCP_DEBUG": "false"
+            }
+          }
+        }
+      }
+    }
+  },
+  "environment_variables": {
+    "MCP_TRANSPORT": {
+      "description": "传输协议类型",
+      "values": ["sse", "stdio", "streamable-http"],
+      "default": "sse"
+    },
+    "MCP_HOST": {
+      "description": "服务器主机地址（仅适用于非stdio模式）",
+      "default": "127.0.0.1"
+    },
+    "MCP_PORT": {
+      "description": "服务器端口（仅适用于非stdio模式）",
+      "default": "8000"
+    },
+    "MCP_PATH": {
+      "description": "HTTP路径（仅适用于streamable-http模式）",
+      "default": "/mcp"
+    },
+    "MCP_SSE_PATH": {
+      "description": "SSE路径（仅适用于sse模式）",
+      "default": "/sse"
+    },
+    "MCP_DEBUG": {
+      "description": "调试模式开关",
+      "values": ["true", "false"],
+      "default": "false"
+    }
+  }
+} 
