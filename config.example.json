@@ -1,0 +1,7 @@
+{
+  "api_base_url": "https://api.openai.com/v1",
+  "api_key": "your-api-key-here",
+  "model": "gpt-4",
+  "theme": "dark",
+  "window_size": "1200x800"
+}

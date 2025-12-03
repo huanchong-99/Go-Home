@@ -55,4 +55,13 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
-config.example.json
+
+# Claude Code 配置
+CLAUDE.md
+
+# 浏览器数据缓存
+browser_data/
+
+# MCP 服务运行时缓存
+FlightTicketMCP/.flight_cache/
+12306-mcp/.cache/
