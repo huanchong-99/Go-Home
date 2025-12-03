@@ -154,7 +154,7 @@ class SegmentQueryEngine:
         test_from: str = "北京",
         test_to: str = "上海",
         test_date: str = None,
-        timeout: float = 90
+        timeout: float = 150
     ) -> bool:
         """
         预热机票服务：执行一次查询以触发验证码处理
@@ -168,7 +168,7 @@ class SegmentQueryEngine:
             test_from: 测试出发城市（默认北京）
             test_to: 测试目的城市（默认上海）
             test_date: 测试日期（默认明天）
-            timeout: 超时时间（秒），默认90秒，需要足够时间让用户处理验证码
+            timeout: 超时时间（秒），默认150秒，需要足够时间让用户处理验证码
 
         Returns:
             True 如果预热成功，False 如果失败
@@ -185,9 +185,12 @@ class SegmentQueryEngine:
         if not test_date:
             test_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        self.log(f"[预热] 开始预热机票服务（{test_from}→{test_to}），预计需要 30-60 秒...")
+        self.log(f"[预热] 开始预热机票服务（{test_from}→{test_to}）...")
         self.log("[预热] ⏳ 正在启动浏览器并加载页面...")
-        self.log("[预热] 💡 如果弹出浏览器窗口，请完成验证码验证")
+        self.log("[预热] =" * 25)
+        self.log("[预热] ⚠️ 如果弹出浏览器窗口，请完成验证码验证！")
+        self.log("[预热] ⚠️ 最多等待 120 秒，请耐心操作")
+        self.log("[预热] =" * 25)
 
         try:
             # 执行一次机票查询，触发验证码检测

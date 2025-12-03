@@ -82,8 +82,52 @@ LANGUAGES = [
 
 # 浏览器用户数据目录（用于持久化 Cookie 和会话，绕过验证码）
 import os
-BROWSER_USER_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "browser_data")
-os.makedirs(BROWSER_USER_DATA_DIR, exist_ok=True)
+import sys
+
+def get_browser_data_dir():
+    """
+    获取浏览器用户数据目录路径
+
+    支持两种环境：
+    1. 开发环境：使用项目目录下的 browser_data
+    2. 打包环境（PyInstaller）：使用 exe 所在目录下的 browser_data
+    """
+    if getattr(sys, 'frozen', False):
+        # 打包环境：使用 exe 所在目录
+        base_dir = os.path.dirname(sys.executable)
+        logger.info(f"[打包环境] exe 目录: {base_dir}")
+    else:
+        # 开发环境：使用项目根目录（flight_ticket_mcp_server 的上级）
+        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+        base_dir = os.path.abspath(base_dir)  # 规范化路径
+        logger.debug(f"[开发环境] 项目目录: {base_dir}")
+
+    browser_data_dir = os.path.join(base_dir, "browser_data")
+    browser_data_dir = os.path.abspath(browser_data_dir)  # 规范化路径
+
+    # 确保目录存在
+    try:
+        os.makedirs(browser_data_dir, exist_ok=True)
+        logger.info(f"浏览器数据目录: {browser_data_dir}")
+    except PermissionError:
+        # 没有写入权限，回退到用户主目录
+        logger.warning(f"无法在 {browser_data_dir} 创建目录（权限不足），使用用户主目录")
+        browser_data_dir = os.path.join(os.path.expanduser("~"), ".flight_mcp_browser_data")
+        os.makedirs(browser_data_dir, exist_ok=True)
+        logger.info(f"浏览器数据目录（回退）: {browser_data_dir}")
+    except Exception as e:
+        # 其他错误，也回退到用户主目录
+        logger.warning(f"创建浏览器数据目录失败: {e}，使用用户主目录")
+        browser_data_dir = os.path.join(os.path.expanduser("~"), ".flight_mcp_browser_data")
+        try:
+            os.makedirs(browser_data_dir, exist_ok=True)
+        except:
+            pass  # 如果还失败，后续使用时会报错
+        logger.info(f"浏览器数据目录（回退）: {browser_data_dir}")
+
+    return browser_data_dir
+
+BROWSER_USER_DATA_DIR = get_browser_data_dir()
 
 
 def create_browser_options(headless: bool = True, use_user_data: bool = True) -> 'ChromiumOptions':
@@ -204,15 +248,35 @@ class FlightRouteSearcher:
             except:
                 pass
 
-        # 创建带有随机配置的新浏览器
-        co = create_browser_options(self.headless)
-        self.page = ChromiumPage(co)
+        try:
+            # 创建带有随机配置的新浏览器
+            logger.info("正在创建浏览器实例...")
+            logger.info(f"浏览器数据目录: {BROWSER_USER_DATA_DIR}")
 
-        # 添加随机延迟，模拟真实用户行为
-        delay = random.uniform(0.5, 1.5)
-        time.sleep(delay)
+            co = create_browser_options(self.headless)
 
-        logger.debug(f"创建新浏览器实例完成，延迟 {delay:.1f}s")
+            # 检查 Chrome 是否可用
+            try:
+                self.page = ChromiumPage(co)
+            except Exception as browser_error:
+                logger.error(f"创建浏览器实例失败: {browser_error}")
+                logger.info("尝试使用默认配置创建浏览器...")
+
+                # 尝试不使用用户数据目录
+                co_fallback = create_browser_options(self.headless, use_user_data=False)
+                self.page = ChromiumPage(co_fallback)
+                logger.warning("使用默认配置创建浏览器成功（Cookie 将不会被保存）")
+
+            # 添加随机延迟，模拟真实用户行为
+            delay = random.uniform(0.5, 1.5)
+            time.sleep(delay)
+
+            logger.info(f"浏览器实例创建成功，延迟 {delay:.1f}s")
+
+        except Exception as e:
+            logger.error(f"创建浏览器失败: {e}")
+            logger.error("请确保已安装 Chrome 浏览器，并且 DrissionPage 可以找到它")
+            raise RuntimeError(f"无法创建浏览器实例: {e}")
     
     def search_flights(self, departure_city: str, destination_city: str, departure_date: str) -> List[Dict[str, Any]]:
         """
@@ -261,19 +325,25 @@ class FlightRouteSearcher:
             self.page.get(search_url)
             logger.info("页面加载完成，等待内容渲染...")
 
-            # 检测是否有验证码
-            if self._detect_captcha():
-                logger.warning("检测到验证码！尝试使用非无头模式让用户手动处理...")
+            # 检测是否有验证码或需要登录
+            needs_action, action_type = self._detect_captcha_or_login()
+            if needs_action:
+                if action_type == 'login':
+                    logger.warning("检测到需要登录！打开浏览器让用户登录...")
+                else:
+                    logger.warning("检测到验证码！尝试使用非无头模式让用户手动处理...")
+
                 # 关闭当前浏览器
                 self.page.quit()
                 self.page = None
 
-                # 使用非无头模式重新创建浏览器
-                self._create_new_browser_for_captcha(search_url)
+                # 使用非无头模式重新创建浏览器，传递操作类型
+                self._create_new_browser_for_captcha(search_url, action_type or 'captcha')
 
-                # 再次检测验证码是否已处理
-                if self._detect_captcha():
-                    logger.error("验证码仍未处理，无法继续查询")
+                # 再次检测是否已处理
+                needs_action_again, _ = self._detect_captcha_or_login()
+                if needs_action_again:
+                    logger.error("验证码/登录仍未处理，无法继续查询")
                     return []
 
             # 智能滚动加载更多内容
@@ -305,12 +375,12 @@ class FlightRouteSearcher:
                 except:
                     pass
 
-    def _detect_captcha(self) -> bool:
+    def _detect_captcha_or_login(self) -> tuple:
         """
-        检测页面是否有验证码
+        检测页面是否有验证码或需要登录
 
         Returns:
-            True 如果检测到验证码
+            tuple: (需要处理, 类型) - 类型可以是 'captcha', 'login', 或 None
         """
         time.sleep(2)  # 等待页面加载
 
@@ -331,34 +401,78 @@ class FlightRouteSearcher:
                 element = self.page.ele(selector, timeout=1)
                 if element:
                     logger.warning(f"检测到验证码元素: {selector}")
-                    return True
+                    return (True, 'captcha')
             except:
                 pass
 
-        # 检查页面内容是否包含验证相关文字
+        # 检查是否需要登录
+        login_selectors = [
+            'css:.login-btn',
+            'css:#login',
+            'css:.login-box',
+            'css:.login-form',
+            'css:.signin',
+            'css:[data-ubt="login_btn"]',
+        ]
+
+        for selector in login_selectors:
+            try:
+                element = self.page.ele(selector, timeout=1)
+                if element:
+                    logger.warning(f"检测到登录元素: {selector}")
+                    return (True, 'login')
+            except:
+                pass
+
+        # 检查页面内容是否包含验证或登录相关文字
         try:
             page_text = self.page.html[:5000].lower()
+
+            # 先检查是否有航班内容，如果有就不需要处理
+            flight_items = self.page.eles('css:.flight-item', timeout=1)
+            if len(flight_items) > 0:
+                return (False, None)
+
+            # 检查验证码关键字
             captcha_keywords = ['验证', 'verify', 'captcha', '滑动', '安全验证']
             for keyword in captcha_keywords:
                 if keyword in page_text:
-                    # 再检查是否有航班内容，如果有就不是验证码页面
-                    flight_items = self.page.eles('css:.flight-item', timeout=1)
-                    if len(flight_items) == 0:
-                        logger.warning(f"页面包含验证关键字: {keyword}")
-                        return True
+                    logger.warning(f"页面包含验证关键字: {keyword}")
+                    return (True, 'captcha')
+
+            # 检查登录关键字
+            login_keywords = ['请登录', '立即登录', '登录后', 'sign in', 'login']
+            for keyword in login_keywords:
+                if keyword in page_text:
+                    logger.warning(f"页面包含登录关键字: {keyword}")
+                    return (True, 'login')
         except:
             pass
 
-        return False
+        return (False, None)
 
-    def _create_new_browser_for_captcha(self, url: str):
+    def _detect_captcha(self) -> bool:
         """
-        创建非无头模式浏览器让用户手动处理验证码
+        检测页面是否有验证码（兼容旧接口）
+
+        Returns:
+            True 如果检测到验证码或需要登录
+        """
+        needs_action, _ = self._detect_captcha_or_login()
+        return needs_action
+
+    def _create_new_browser_for_captcha(self, url: str, action_type: str = 'captcha'):
+        """
+        创建非无头模式浏览器让用户手动处理验证码或登录
 
         Args:
             url: 要访问的URL
+            action_type: 需要的操作类型 ('captcha' 或 'login')
         """
-        logger.info("创建可视化浏览器窗口，请手动完成验证码...")
+        if action_type == 'login':
+            logger.info("创建可视化浏览器窗口，请登录携程账号...")
+        else:
+            logger.info("创建可视化浏览器窗口，请手动完成验证码...")
 
         # 创建非无头模式的浏览器
         co = create_browser_options(headless=False, use_user_data=True)
@@ -367,38 +481,51 @@ class FlightRouteSearcher:
         # 访问页面
         self.page.get(url)
 
-        # 等待页面加载或用户处理验证码（最多等待60秒）
-        logger.info("等待页面加载或验证码处理（最多60秒）...")
-        for i in range(60):
+        # 等待页面加载或用户处理验证码/登录（最多等待120秒，给用户足够时间）
+        logger.info("=" * 50)
+        if action_type == 'login':
+            logger.info("⚠️ 请在弹出的浏览器窗口中登录携程账号！")
+            logger.info("⚠️ 登录后 Cookie 将被保存，下次无需重复登录")
+        else:
+            logger.info("⚠️ 请在弹出的浏览器窗口中完成验证码验证！")
+        logger.info("⚠️ 操作完成后，航班数据将自动加载")
+        logger.info("⚠️ 最多等待 120 秒，请耐心操作...")
+        logger.info("=" * 50)
+
+        min_flight_count = 3  # 至少要有3个航班才认为加载成功
+        consecutive_success_needed = 2  # 连续2次检测到航班才确认成功
+        consecutive_success = 0
+
+        for i in range(120):  # 增加到120秒
             time.sleep(1)
 
             # 检查是否有航班列表出现
             try:
                 flight_items = self.page.eles('css:.flight-item', timeout=1)
-                if len(flight_items) > 0:
-                    logger.info(f"页面加载成功，检测到 {len(flight_items)} 个航班")
-                    return
-            except:
-                pass
-
-            # 检查页面是否已经加载完成（有航班容器但可能还在加载数据）
-            try:
-                body_wrapper = self.page.ele('css:.body-wrapper', timeout=1)
-                if body_wrapper:
-                    # 页面结构已加载，检查是否有验证码
-                    if not self._detect_captcha_fast():
-                        logger.info("页面结构已加载，无验证码，继续等待航班数据...")
-                        # 再等待几秒让航班数据加载
-                        time.sleep(5)
+                if len(flight_items) >= min_flight_count:
+                    consecutive_success += 1
+                    if consecutive_success >= consecutive_success_needed:
+                        logger.info(f"✅ 页面加载成功，检测到 {len(flight_items)} 个航班")
+                        # 额外等待确保数据完全加载
+                        time.sleep(3)
                         return
+                    else:
+                        logger.info(f"检测到 {len(flight_items)} 个航班，等待确认...")
+                else:
+                    consecutive_success = 0  # 重置计数器
             except:
+                consecutive_success = 0
                 pass
 
-            # 每10秒输出一次日志
-            if i > 0 and i % 10 == 0:
-                logger.info(f"仍在等待页面加载... ({i}/60秒)")
+            # 每15秒输出一次提示
+            if i > 0 and i % 15 == 0:
+                logger.info(f"⏳ 仍在等待处理... ({i}/120秒)")
+                if action_type == 'login':
+                    logger.info("💡 提示：请在浏览器窗口中完成登录")
+                else:
+                    logger.info("💡 提示：请在浏览器窗口中完成验证码")
 
-        logger.warning("页面加载超时")
+        logger.warning("⚠️ 页面加载超时（120秒），请检查网络或手动刷新页面")
 
     def _detect_captcha_fast(self) -> bool:
         """
