@@ -9,6 +9,7 @@ import threading
 import asyncio
 import json
 import os
+import sys
 import queue
 # ThreadPoolExecutor 已移至 segment_query.py
 from datetime import datetime, timedelta
@@ -29,16 +30,44 @@ from segment_query import (
 )
 
 
+def get_runtime_config():
+    """
+    获取运行时配置，自动检测是开发环境还是打包环境
 
-# Conda 环境配置
-CONDA_ENV_PATH = r"G:\conda environment\Go-home"
-PYTHON_EXE = os.path.join(CONDA_ENV_PATH, "python.exe")
-NODE_EXE = os.path.join(CONDA_ENV_PATH, "node.exe")
+    Returns:
+        tuple: (PROJECT_ROOT, PYTHON_EXE, NODE_EXE, FLIGHT_MCP_CMD, TRAIN_MCP_SCRIPT, IS_FROZEN)
+    """
+    # 检测是否是 PyInstaller 打包后的环境
+    is_frozen = getattr(sys, 'frozen', False)
 
-# MCP 服务路径
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+    if is_frozen:
+        # 打包后的环境：exe 所在目录
+        PROJECT_ROOT = os.path.dirname(sys.executable)
+        # 便携版不需要单独的 Python，FlightMCP 已打包成 exe
+        PYTHON_EXE = None
+        # Node.js 便携版路径
+        NODE_EXE = os.path.join(PROJECT_ROOT, "node", "node.exe")
+        # FlightMCP 作为独立 exe 运行
+        FLIGHT_MCP_EXE = os.path.join(PROJECT_ROOT, "FlightTicketMCP", "FlightMCP.exe")
+        # 12306-mcp 脚本路径
+        TRAIN_MCP_SCRIPT = os.path.join(PROJECT_ROOT, "12306-mcp", "build", "index.js")
+    else:
+        # 开发环境
+        PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+        CONDA_ENV_PATH = r"G:\conda environment\Go-home"
+        PYTHON_EXE = os.path.join(CONDA_ENV_PATH, "python.exe")
+        NODE_EXE = os.path.join(CONDA_ENV_PATH, "node.exe")
+        FLIGHT_MCP_EXE = None  # 开发环境使用 python -m 模式
+        TRAIN_MCP_SCRIPT = os.path.join(PROJECT_ROOT, "12306-mcp", "build", "index.js")
+
+    return PROJECT_ROOT, PYTHON_EXE, NODE_EXE, FLIGHT_MCP_EXE, TRAIN_MCP_SCRIPT, is_frozen
+
+
+# 获取运行时配置
+PROJECT_ROOT, PYTHON_EXE, NODE_EXE, FLIGHT_MCP_EXE, TRAIN_MCP_SCRIPT, IS_FROZEN = get_runtime_config()
+
+# 开发环境下的模块名（打包后不使用）
 FLIGHT_MCP_MODULE = "flight_ticket_mcp_server"
-TRAIN_MCP_SCRIPT = os.path.join(PROJECT_ROOT, "12306-mcp", "build", "index.js")
 
 # 配置文件路径
 CONFIG_FILE = os.path.join(PROJECT_ROOT, "config.json")
@@ -213,10 +242,24 @@ class MCPServiceManager:
             return True
 
         try:
+            # 根据运行环境选择启动方式
+            if IS_FROZEN:
+                # 打包环境：直接运行 FlightMCP.exe
+                if not os.path.exists(FLIGHT_MCP_EXE):
+                    if log_callback:
+                        log_callback(f"[FlightMCP] 错误: 找不到 {FLIGHT_MCP_EXE}")
+                    return False
+                command = [FLIGHT_MCP_EXE]
+                cwd = os.path.dirname(FLIGHT_MCP_EXE)
+            else:
+                # 开发环境：使用 python -m 模式
+                command = [PYTHON_EXE, "-m", FLIGHT_MCP_MODULE]
+                cwd = PROJECT_ROOT
+
             self.flight_client = MCPClientWorker(
                 name="flight",
-                command=[PYTHON_EXE, "-m", FLIGHT_MCP_MODULE],
-                cwd=PROJECT_ROOT
+                command=command,
+                cwd=cwd
             )
 
             success = self.flight_client.start()

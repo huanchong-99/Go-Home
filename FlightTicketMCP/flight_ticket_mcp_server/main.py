@@ -6,6 +6,50 @@ Supports multiple transports: stdio, sse, and streamable-http using standalone F
 
 import os
 import sys
+
+# 检测是否作为子进程运行（无控制台）
+# 当 stdin/stdout 不是 TTY 时（如被 GUI 程序作为子进程启动）
+_is_subprocess = not sys.stdout.isatty() or not sys.stdin.isatty()
+_is_frozen = getattr(sys, 'frozen', False)
+
+if _is_subprocess and _is_frozen:
+    # 在打包环境中作为子进程运行时，禁用所有终端相关功能
+    os.environ['NO_COLOR'] = '1'
+    os.environ['TERM'] = 'dumb'
+    os.environ['FORCE_COLOR'] = '0'
+    os.environ['COLORTERM'] = ''
+    os.environ['RICH_FORCE_TERMINAL'] = ''
+
+    # 关键修复：在导入 fastmcp 之前，先 patch rich.console.Console
+    # 使其在 Windows 无控制台环境下不会崩溃
+    import rich.console
+
+    _original_console_init = rich.console.Console.__init__
+
+    def _patched_console_init(self, *args, **kwargs):
+        # 强制禁用所有特殊渲染功能
+        kwargs['force_terminal'] = False
+        kwargs['force_interactive'] = False
+        kwargs['force_jupyter'] = False
+        kwargs['no_color'] = True
+        kwargs['color_system'] = None  # 完全禁用颜色系统
+        kwargs['legacy_windows'] = False  # 禁用 legacy Windows 渲染
+        _original_console_init(self, *args, **kwargs)
+
+    rich.console.Console.__init__ = _patched_console_init
+
+    # 同时 patch _write_buffer 方法来捕获任何遗漏的错误
+    _original_write_buffer = rich.console.Console._write_buffer
+
+    def _safe_write_buffer(self):
+        try:
+            _original_write_buffer(self)
+        except OSError:
+            # 忽略 Windows 控制台错误
+            pass
+
+    rich.console.Console._write_buffer = _safe_write_buffer
+
 # Set required environment variable for FastMCP 2.8.1+
 os.environ.setdefault('FASTMCP_LOG_LEVEL', 'INFO')
 
