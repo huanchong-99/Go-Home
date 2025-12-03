@@ -37,6 +37,21 @@
 
 ## 快速开始
 
+### 0. 前置要求：安装 Chrome 浏览器
+
+> **重要**：机票查询功能依赖 Chrome 浏览器进行网页自动化操作。
+
+请确保系统已安装 **Google Chrome** 浏览器：
+
+- **下载地址**：https://www.google.com/chrome/
+- **安装位置**：建议使用默认安装路径
+  - Windows: `C:\Program Files\Google\Chrome\Application\chrome.exe`
+  - 或: `C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`
+
+如果 Chrome 安装在非默认位置，程序可能无法自动找到浏览器。
+
+> **提示**：如果你只需要查询火车票，可以不安装 Chrome，火车票服务不依赖浏览器。
+
 ### 1. 环境准备
 
 推荐使用 Conda 创建独立环境：
