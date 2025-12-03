@@ -110,55 +110,27 @@ def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_plac
     Returns:
         List[str]: 符合条件的航班列表，每个航班用字典表示。
     """
-    # [临时测试] 详细调试日志 - 调通后记得删除
-    import time as _time
-    _start_time = _time.time()
-    logger.info("=" * 60)
-    logger.info(f"[DEBUG] getTransferFlightsByThreePlace 开始")
-    logger.info(f"[DEBUG] 参数: from_place={from_place}, transfer_place={transfer_place}, to_place={to_place}")
-    logger.info(f"[DEBUG] departure_date={departure_date}, min_transfer_time={min_transfer_time}, max_transfer_time={max_transfer_time}")
-    logger.info(f"开始查询中转航班...")
-    logger.info(f"始发地: {from_place}，中转地：{transfer_place}， 目的地: {to_place}")
+    logger.info(f"开始查询中转航班: {from_place} -> {transfer_place} -> {to_place}")
 
     try:
         # 获取所有城市的三字码
-        logger.info(f"[DEBUG] 开始获取城市三字码...")
-        logger.info(f"[DEBUG] 正在查询 {from_place} 的三字码...")
-        _code_start = _time.time()
         from_code = _get_location_codev2(from_place)
-        logger.info(f"[DEBUG] {from_place} -> {from_code}, 耗时: {_time.time() - _code_start:.2f}s")
-
-        logger.info(f"[DEBUG] 正在查询 {transfer_place} 的三字码...")
-        _code_start = _time.time()
         transfer_code = _get_location_codev2(transfer_place)
-        logger.info(f"[DEBUG] {transfer_place} -> {transfer_code}, 耗时: {_time.time() - _code_start:.2f}s")
-
-        logger.info(f"[DEBUG] 正在查询 {to_place} 的三字码...")
-        _code_start = _time.time()
         to_code = _get_location_codev2(to_place)
-        logger.info(f"[DEBUG] {to_place} -> {to_code}, 耗时: {_time.time() - _code_start:.2f}s")
 
-        logger.info(f"三字码查询成功！始发地: {from_code}，中转地{transfer_code}， 目的地: {to_code}")
+        logger.info(f"三字码: {from_code} -> {transfer_code} -> {to_code}")
 
         # 获取两段行程列表
-        logger.info(f"[DEBUG] 开始查询第一段行程 {from_code} -> {transfer_code}...")
-        _trip_start = _time.time()
         first_trips = _get_direct_airline(from_code, transfer_code)
-        first_trips = first_trips or []  # 确保不是 None
-        logger.info(f"[DEBUG] 第一段行程查询完成，耗时: {_time.time() - _trip_start:.2f}s, 找到 {len(first_trips)} 个航班")
-
-        logger.info(f"[DEBUG] 开始查询第二段行程 {transfer_code} -> {to_code}...")
-        _trip_start = _time.time()
+        first_trips = first_trips or []
         after_trips = _get_direct_airline(transfer_code, to_code)
-        after_trips = after_trips or []  # 确保不是 None
-        logger.info(f"[DEBUG] 第二段行程查询完成，耗时: {_time.time() - _trip_start:.2f}s, 找到 {len(after_trips)} 个航班")
+        after_trips = after_trips or []
 
-        logger.info(f"行程分段查询成功！ {from_place} - {transfer_place} {len(first_trips)}")
-        logger.info(f"{transfer_place} - {to_place} {len(after_trips)}")
+        logger.info(f"第一段航班: {len(first_trips)}, 第二段航班: {len(after_trips)}")
 
         # 计算换乘路线
         select_trips = []
-        index=1
+        index = 1
         for trip1 in first_trips:
             arrival_time = trip1.schedule.arrival_time
             arrival_time = datetime.strptime(arrival_time, "%H:%M").time()
@@ -169,29 +141,21 @@ def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_plac
                 departure_time = datetime.combine(datetime.today(), departure_time)
                 if (departure_time - arrival_time > timedelta(hours=min_transfer_time)
                         and departure_time - arrival_time < timedelta(hours=max_transfer_time)):
-                    # 符合换乘时间要求，添加到结果列表
-                    logger.info(f"符合换乘时间要求: {trip1.flight_number} {arrival_time} - {trip2.flight_number} {departure_time}")
-                    transfer=FlightTransfer(
+                    transfer = FlightTransfer(
                         transfer_id=f"{index}",
                         first_flight=trip1,
                         second_flight=trip2,
                         departure_date=departure_date,
-                        transfer_time=round((departure_time - arrival_time).total_seconds() / 3600,3)
+                        transfer_time=round((departure_time - arrival_time).total_seconds() / 3600, 3)
                     )
                     index += 1
-                    logger.info(f"添加中转航班: {transfer.first_flight.flight_number} -> {transfer.second_flight.flight_number}, 中转时间: {transfer.transfer_time}小时")
                     select_trips.append(transfer)
 
-        logger.info(f"查询到 {len(select_trips)} 条中转航班信息")
-        logger.info(f"[DEBUG] getTransferFlightsByThreePlace 总耗时: {_time.time() - _start_time:.2f}s")
-        logger.info("=" * 60)
+        logger.info(f"查询到 {len(select_trips)} 条中转航班")
         return select_trips
     except Exception as e:
-        logger.error(f"[DEBUG] getTransferFlightsByThreePlace 异常: {type(e).__name__}: {str(e)}")
-        logger.warning(f"查询中转航班信息失败：{from_place}-{transfer_place}-{to_place}, 错误: {str(e)}", exc_info=True)
-        logger.info(f"[DEBUG] getTransferFlightsByThreePlace 异常耗时: {_time.time() - _start_time:.2f}s")
-        logger.info("=" * 60)
-        return []  # 返回空列表而不是 None
+        logger.error(f"查询中转航班失败: {str(e)}")
+        return []
 
 
 def _get_location_code(place: str) -> str:
@@ -245,40 +209,23 @@ def _get_location_codev2(place: str) -> str:
     Returns:
         Optional[str]: 对应的机场三字码，如 "PEK" 或 "PVG"；如果找不到则返回 None。
     '''
-    # [临时测试] 详细调试日志 - 调通后记得删除
-    import time as _time
-    _start = _time.time()
-    logger.info(f"[DEBUG] _get_location_codev2({place}) 开始")
-
     driver = None
     try:
-        logger.info(f"[DEBUG] 正在创建 WebDriver (自动检测浏览器)...")
-        _driver_start = _time.time()
         driver = create_selenium_driver()
-        logger.info(f"[DEBUG] WebDriver 创建成功，耗时: {_time.time() - _driver_start:.2f}s")
-
         url = 'https://www.chahangxian.com/'
-
-        # 打开网页
-        logger.info(f"[DEBUG] 正在访问 {url}...")
         driver.get(url)
         time.sleep(2)
 
-        # 输入一个字
         search_box = driver.find_element(By.CLASS_NAME, "search")
-
-        # 百度汉语的输入框ID是kw
         input_box = search_box.find_element(By.NAME, "keyword")
         input_box.clear()
         input_box.send_keys(place)
         input_box.send_keys(Keys.ENTER)
         time.sleep(2)
         result = driver.current_url.split("/")[-2]
-        logger.info(f"[DEBUG] _get_location_codev2({place}) 完成，结果: {result}, 总耗时: {_time.time() - _start:.2f}s")
         return result
     except Exception as e:
-        logger.error(f"[DEBUG] _get_location_codev2({place}) 异常: {type(e).__name__}: {str(e)}")
-        logger.warning(f"查询{place}城市三字码错误" + str(e))
+        logger.warning(f"查询{place}城市三字码错误: {str(e)}")
         return None
     finally:
         if driver:
@@ -290,76 +237,64 @@ def _get_location_codev2(place: str) -> str:
 
 def _get_direct_airline(from_code: str, to_code: str) -> list:
     '''
-    :param from_code:
-    :param to_code:
-    :return:
+    查询两地之间的直飞航班
+    :param from_code: 出发地机场代码
+    :param to_code: 目的地机场代码
+    :return: 航班列表
     '''
-    # [临时测试] 详细调试日志 - 调通后记得删除
-    import time as _time
-    _start = _time.time()
-    logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 开始")
-
     driver = None
     try:
-        logger.info(f"[DEBUG] 正在创建 WebDriver (自动检测浏览器)...")
-        _driver_start = _time.time()
         driver = create_selenium_driver()
-        logger.info(f"[DEBUG] WebDriver 创建成功，耗时: {_time.time() - _driver_start:.2f}s")
-
         url = f"https://www.chahangxian.com/{from_code.lower()}-{to_code.lower()}/"
-        logger.info(f"[DEBUG] 正在访问 {url}...")
         driver.get(url)
         time.sleep(1)
 
-        tabs = driver.find_elements(By.CLASS_NAME, "J_link")  # 修改为你目标网站的内容类名
+        tabs = driver.find_elements(By.CLASS_NAME, "J_link")
         if len(tabs) == 0:
             logger.warning(f"航班为空 {from_code}-{to_code}")
-        else:
-            result = []
-            index=1
-            for tab in tabs:
-                transfer = tab.find_elements(By.CLASS_NAME, "transfer")
-                if len(transfer) == 0:
-                    box = tab.find_element(By.CLASS_NAME, "airline-box")
-                    img = box.find_element(By.TAG_NAME, 'img')
-                    airline = img.get_attribute('alt')
-                    message = tab.text.splitlines()
-                    schedule = FlightSchedule(
-                        departure_time=message[3],
-                        arrival_time=message[7],
-                        duration="",
-                        timezone=""
-                    )
-                    mPrice = message[13].split(" ")[1].split("~")
-                    price = FlightPrice(
-                        economy=float(mPrice[0]),
-                        business=float(mPrice[-1]),
-                        first=0,
-                    )
-                    flight = Flight(
-                        flight_id=f"{index}",
-                        flight_number=message[0],
-                        airline=airline,
-                        aircraft=message[1],
-                        origin=message[4],
-                        destination=message[8],
-                        schedule=schedule,
-                        price=price,
-                        seat_config=SeatConfiguration(),
-                        services={},
-                    )
-                    index += 1
-                    result.append(flight)
-            if len(result) == 0:
-                logger.warning("没有直飞，建议转机")
-                logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 完成，无直飞，总耗时: {_time.time() - _start:.2f}s")
-                return []
-            else:
-                logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 完成，找到 {len(result)} 个航班，总耗时: {_time.time() - _start:.2f}s")
-                return result
+            return []
+
+        result = []
+        index = 1
+        for tab in tabs:
+            transfer = tab.find_elements(By.CLASS_NAME, "transfer")
+            if len(transfer) == 0:
+                box = tab.find_element(By.CLASS_NAME, "airline-box")
+                img = box.find_element(By.TAG_NAME, 'img')
+                airline = img.get_attribute('alt')
+                message = tab.text.splitlines()
+                schedule = FlightSchedule(
+                    departure_time=message[3],
+                    arrival_time=message[7],
+                    duration="",
+                    timezone=""
+                )
+                mPrice = message[13].split(" ")[1].split("~")
+                price = FlightPrice(
+                    economy=float(mPrice[0]),
+                    business=float(mPrice[-1]),
+                    first=0,
+                )
+                flight = Flight(
+                    flight_id=f"{index}",
+                    flight_number=message[0],
+                    airline=airline,
+                    aircraft=message[1],
+                    origin=message[4],
+                    destination=message[8],
+                    schedule=schedule,
+                    price=price,
+                    seat_config=SeatConfiguration(),
+                    services={},
+                )
+                index += 1
+                result.append(flight)
+
+        if len(result) == 0:
+            logger.warning(f"没有直飞航班 {from_code}-{to_code}")
+        return result
     except Exception as e:
-        logger.error(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 异常: {type(e).__name__}: {str(e)}")
-        logger.warning(f"直飞查询失败 {from_code}-{to_code}" + str(e))
+        logger.warning(f"直飞查询失败 {from_code}-{to_code}: {str(e)}")
         return []
     finally:
         if driver:

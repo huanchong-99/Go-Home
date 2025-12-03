@@ -295,60 +295,37 @@ class FlightRouteSearcher:
 
         每次调用都会生成不同的浏览器指纹，模拟不同用户访问
         """
-        # [临时测试] 详细调试日志 - 调通后记得删除
-        import time as _time
-        _browser_start = _time.time()
-        logger.info(f"[DEBUG] _create_new_browser 开始")
-
         # 关闭旧的浏览器（如果存在）
         if self.page:
             try:
                 self.page.quit()
-                logger.info(f"[DEBUG] 已关闭旧浏览器")
             except:
                 pass
 
         try:
             # 创建带有随机配置的新浏览器
             logger.info("正在创建浏览器实例...")
-            logger.info(f"浏览器数据目录: {BROWSER_USER_DATA_DIR}")
-            logger.info(f"[DEBUG] headless 模式: {self.headless}")
-
-            logger.info(f"[DEBUG] 正在创建 ChromiumOptions...")
             co = create_browser_options(self.headless)
-            logger.info(f"[DEBUG] ChromiumOptions 创建完成，耗时: {_time.time() - _browser_start:.2f}s")
 
-            # 检查 Chrome 是否可用
             try:
-                logger.info(f"[DEBUG] 正在创建 ChromiumPage (可能需要几秒)...")
-                _page_start = _time.time()
                 self.page = ChromiumPage(co)
-                logger.info(f"[DEBUG] ChromiumPage 创建成功，耗时: {_time.time() - _page_start:.2f}s")
             except Exception as browser_error:
-                logger.error(f"[DEBUG] ChromiumPage 创建失败: {type(browser_error).__name__}: {browser_error}")
                 logger.error(f"创建浏览器实例失败: {browser_error}")
                 logger.info("尝试使用默认配置创建浏览器...")
 
                 # 尝试不使用用户数据目录
                 co_fallback = create_browser_options(self.headless, use_user_data=False)
-                logger.info(f"[DEBUG] 正在使用备用配置创建 ChromiumPage...")
-                _fallback_start = _time.time()
                 self.page = ChromiumPage(co_fallback)
-                logger.info(f"[DEBUG] 备用 ChromiumPage 创建成功，耗时: {_time.time() - _fallback_start:.2f}s")
                 logger.warning("使用默认配置创建浏览器成功（Cookie 将不会被保存）")
 
             # 添加随机延迟，模拟真实用户行为
             delay = random.uniform(0.5, 1.5)
             time.sleep(delay)
 
-            logger.info(f"浏览器实例创建成功，延迟 {delay:.1f}s")
-            logger.info(f"[DEBUG] _create_new_browser 总耗时: {_time.time() - _browser_start:.2f}s")
+            logger.info("浏览器实例创建成功")
 
         except Exception as e:
-            logger.error(f"[DEBUG] _create_new_browser 严重错误: {type(e).__name__}: {e}")
             logger.error(f"创建浏览器失败: {e}")
-            logger.error("请确保已安装 Chrome 浏览器，并且 DrissionPage 可以找到它")
-            logger.info(f"[DEBUG] _create_new_browser 异常耗时: {_time.time() - _browser_start:.2f}s")
             raise RuntimeError(f"无法创建浏览器实例: {e}")
     
     def search_flights(self, departure_city: str, destination_city: str, departure_date: str) -> List[Dict[str, Any]]:
@@ -915,16 +892,8 @@ def searchFlightRoutes(departure_city: str, destination_city: str, departure_dat
     Returns:
         包含航班查询结果的字典
     """
-    # [临时测试] 详细调试日志 - 调通后记得删除
-    import time as _time
-    _start_time = _time.time()
-    logger.info("=" * 60)
-    logger.info(f"[DEBUG] searchFlightRoutes 开始")
-    logger.info(f"[DEBUG] 参数: departure_city={departure_city}, destination_city={destination_city}, departure_date={departure_date}")
-    logger.info(f"[DEBUG] DrissionPage 可用: {DRISSION_PAGE_AVAILABLE}")
-    logger.info(f"[DEBUG] get_airport_code 可用: {get_airport_code is not None}")
     logger.info(f"开始查询航班路线: {departure_city} -> {destination_city}, 日期: {departure_date}")
-    
+
     try:
         # 验证输入参数
         if not departure_city or not destination_city or not departure_date:
@@ -991,17 +960,11 @@ def searchFlightRoutes(departure_city: str, destination_city: str, departure_dat
             }
         
         # 创建搜索器并搜索
-        logger.info(f"[DEBUG] 准备创建 FlightRouteSearcher...")
-        logger.info(f"[DEBUG] 浏览器数据目录: {BROWSER_USER_DATA_DIR}")
         searcher = FlightRouteSearcher(headless=True)
-        logger.info(f"[DEBUG] FlightRouteSearcher 创建成功，耗时: {_time.time() - _start_time:.2f}s")
 
         try:
-            logger.info(f"[DEBUG] 开始调用 search_flights...")
-            _search_start = _time.time()
             flights = searcher.search_flights(departure_city, destination_city, departure_date)
-            logger.info(f"[DEBUG] search_flights 完成，耗时: {_time.time() - _search_start:.2f}s, 找到 {len(flights)} 个航班")
-            
+
             # 格式化结果
             result = {
                 "status": "success",
@@ -1043,18 +1006,13 @@ def searchFlightRoutes(departure_city: str, destination_city: str, departure_dat
                     result["airline_statistics"] = airlines
             
             logger.info(f"航班路线查询成功: 找到 {len(flights)} 条航班")
-            logger.info(f"[DEBUG] searchFlightRoutes 总耗时: {_time.time() - _start_time:.2f}s")
-            logger.info("=" * 60)
             return result
 
         finally:
             searcher.close()
 
     except Exception as e:
-        logger.error(f"[DEBUG] searchFlightRoutes 异常: {type(e).__name__}: {str(e)}")
-        logger.error(f"查询航班路线失败: {str(e)}", exc_info=True)
-        logger.info(f"[DEBUG] searchFlightRoutes 异常耗时: {_time.time() - _start_time:.2f}s")
-        logger.info("=" * 60)
+        logger.error(f"查询航班路线失败: {str(e)}")
         return {
             "status": "error",
             "message": f"查询航班路线失败: {str(e)}",
