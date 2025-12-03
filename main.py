@@ -1201,11 +1201,11 @@ class GoHomeApp(ctk.CTk):
 
 3. 查询机票航线：
    工具: flight_searchFlightRoutes
-   参数: {{"departCity": "北京", "arriveCity": "上海", "departDate": "2025-01-15"}}
+   参数: {{"departure_city": "北京", "destination_city": "上海", "departure_date": "2025-01-15"}}
 
 4. 查询中转机票（需指定中转城市）：
    工具: flight_getTransferFlightsByThreePlace
-   参数: {{"departCity": "北京", "transferCity": "郑州", "arriveCity": "上海", "departDate": "2025-01-15"}}
+   参数: {{"from_place": "北京", "transfer_place": "郑州", "to_place": "上海"}}
 
 5. 查询火车票中转方案：
    工具: train_get-interline-tickets
@@ -1476,35 +1476,82 @@ class GoHomeApp(ctk.CTk):
 
     def call_ai_api(self, user_message: str):
         """调用 AI API 获取回复，支持 Function Calling"""
+        # ============================================================
+        # [临时测试] 超详细调试日志 - 调通后记得删除
+        # ============================================================
+        import time
+        def debug_log(msg):
+            """带时间戳的调试日志"""
+            timestamp = time.strftime("%H:%M:%S")
+            self.after(0, lambda m=f"[DEBUG {timestamp}] {msg}": self.log_message(m))
+            # 同时输出到控制台（如果有）
+            print(f"[DEBUG {timestamp}] {msg}")
+
+        debug_log("=== call_ai_api 开始 ===")
+        debug_log(f"Python frozen: {getattr(sys, 'frozen', False)}")
+
         api_key = self.api_key_entry.get()
         base_url = self.api_url_entry.get()
         model = self.model_combobox.get()
 
+        debug_log(f"API Base URL: {base_url}")
+        debug_log(f"Model: {model}")
+        debug_log(f"API Key 长度: {len(api_key)} 字符")
+
         # 构建系统提示词
+        debug_log("正在构建系统提示词...")
         system_prompt = self.build_system_prompt()
+        debug_log(f"系统提示词长度: {len(system_prompt)} 字符")
 
         try:
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            # [临时测试] 检查 SSL 证书配置
+            debug_log("检查 SSL 证书...")
+            try:
+                import certifi
+                import ssl
+                cert_path = certifi.where()
+                debug_log(f"certifi 证书路径: {cert_path}")
+                debug_log(f"证书文件存在: {os.path.exists(cert_path)}")
+
+                # 设置环境变量（可能修复某些 SSL 问题）
+                if getattr(sys, 'frozen', False):
+                    os.environ['SSL_CERT_FILE'] = cert_path
+                    os.environ['REQUESTS_CA_BUNDLE'] = cert_path
+                    debug_log("已设置 SSL_CERT_FILE 和 REQUESTS_CA_BUNDLE 环境变量")
+            except Exception as ssl_err:
+                debug_log(f"SSL 证书检查失败: {ssl_err}")
+
+            debug_log("正在创建 OpenAI 客户端...")
+            client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
+            debug_log("OpenAI 客户端创建成功")
 
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ]
+            debug_log(f"消息列表构建完成，共 {len(messages)} 条消息")
 
             # 获取可用的 MCP 工具
+            debug_log("正在获取 MCP 工具列表...")
             tools = self.mcp_manager.get_all_tools()
+            debug_log(f"获取到 {len(tools)} 个工具")
 
             # 根据用户选择过滤工具
             transport = self.transport_var.get()
+            debug_log(f"交通方式选择: {transport}")
             if transport == "flight":
                 tools = [t for t in tools if t["function"]["name"].startswith("flight_")]
             elif transport == "train":
                 tools = [t for t in tools if t["function"]["name"].startswith("train_")]
+            debug_log(f"过滤后工具数量: {len(tools)}")
 
             has_tools = len(tools) > 0
 
             if has_tools:
                 self.after(0, lambda: self.log_message(f"[AI] 可用工具数量: {len(tools)}"))
+                # 列出工具名称
+                tool_names = [t["function"]["name"] for t in tools]
+                debug_log(f"工具列表: {tool_names}")
 
             # 循环处理，直到 AI 不再调用工具
             max_iterations = 10
@@ -1513,11 +1560,18 @@ class GoHomeApp(ctk.CTk):
 
             while iteration < max_iterations:
                 iteration += 1
+                debug_log(f"=== 第 {iteration} 轮对话开始 ===")
                 self.after(0, lambda it=iteration: self.log_message(f"[AI] 第 {it} 轮对话"))
                 self.after(0, lambda it=iteration, tc=total_tool_calls: self.show_progress(
                     it, max_iterations, f"🤖 AI对话中 (已调用{tc}个工具)"))
 
                 # 调用 AI API
+                debug_log(f"准备调用 API: {base_url}/chat/completions")
+                debug_log(f"请求参数: model={model}, has_tools={has_tools}, temperature=0.7")
+
+                api_start_time = time.time()
+                debug_log(">>> 发送 API 请求...")
+
                 if has_tools:
                     response = client.chat.completions.create(
                         model=model,
@@ -1533,10 +1587,15 @@ class GoHomeApp(ctk.CTk):
                         temperature=0.7
                     )
 
+                api_elapsed = time.time() - api_start_time
+                debug_log(f"<<< API 响应收到，耗时: {api_elapsed:.2f} 秒")
+
                 assistant_message = response.choices[0].message
+                debug_log(f"响应类型: {'有工具调用' if assistant_message.tool_calls else '纯文本回复'}")
 
                 # 检查是否有工具调用
                 if assistant_message.tool_calls:
+                    debug_log(f"AI 请求调用 {len(assistant_message.tool_calls)} 个工具")
                     # 将助手消息添加到消息列表
                     messages.append({
                         "role": "assistant",
@@ -1557,6 +1616,7 @@ class GoHomeApp(ctk.CTk):
                     # 处理每个工具调用
                     for tool_call in assistant_message.tool_calls:
                         tool_name = tool_call.function.name
+                        debug_log(f"准备调用工具: {tool_name}")
                         try:
                             tool_args = json.loads(tool_call.function.arguments)
                         except json.JSONDecodeError:
@@ -1568,7 +1628,11 @@ class GoHomeApp(ctk.CTk):
                             it, max_iterations, f"🤖 AI对话中 (已调用{tc}个工具)"))
 
                         # 调用 MCP 工具
+                        debug_log(f">>> 调用 MCP 工具: {tool_name}")
+                        tool_start = time.time()
                         tool_result = self.mcp_manager.call_tool(tool_name, tool_args)
+                        tool_elapsed = time.time() - tool_start
+                        debug_log(f"<<< MCP 工具返回，耗时: {tool_elapsed:.2f} 秒")
 
                         # 截断过长的结果用于日志显示
                         log_result = tool_result[:200] + "..." if len(tool_result) > 200 else tool_result
@@ -1580,22 +1644,32 @@ class GoHomeApp(ctk.CTk):
                             "tool_call_id": tool_call.id,
                             "content": tool_result
                         })
+                        debug_log(f"工具结果已添加到消息列表")
                 else:
                     # 没有工具调用，获取最终回复
+                    debug_log("AI 返回最终回复，无需调用工具")
                     final_content = assistant_message.content or "抱歉，我无法生成回复。"
+                    debug_log(f"最终回复长度: {len(final_content)} 字符")
 
                     # 在主线程更新 UI
                     self.after(0, lambda msg=final_content: self.show_result(msg))
                     self.after(0, lambda: self.log_message("[AI] 查询完成"))
+                    debug_log("=== call_ai_api 正常结束 ===")
                     break
 
             else:
                 # 达到最大迭代次数
+                debug_log("达到最大迭代次数限制")
                 self.after(0, lambda: self.show_result("⚠️ 处理请求时超过了最大工具调用次数，请尝试简化您的问题。"))
                 self.after(0, lambda: self.log_message("[AI] 超过最大工具调用次数"))
 
         except Exception as e:
             error_str = str(e)
+            debug_log(f"!!! 发生异常: {type(e).__name__}")
+            debug_log(f"!!! 异常信息: {error_str}")
+            import traceback
+            debug_log(f"!!! 异常堆栈:\n{traceback.format_exc()}")
+
             if "thought_signature" in error_str:
                 error_msg = "⚠️ AI 请求失败: 模型限制\n\n当前使用的是 thinking 类型模型，该类型模型在多轮工具调用时需要特殊处理。\n\n解决方案：请在 API 设置中选择一个非 thinking 的普通模型"
             else:
@@ -1604,6 +1678,7 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda err=error_str: self.log_message(f"[AI] 错误: {err}"))
 
         finally:
+            debug_log("=== call_ai_api finally 块执行 ===")
             # 隐藏进度条并恢复查询按钮
             self.after(0, self.hide_progress)
             self.after(0, lambda: self.query_btn.configure(state="normal", text="🔍 开始查询"))

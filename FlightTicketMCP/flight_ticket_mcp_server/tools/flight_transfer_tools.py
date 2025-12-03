@@ -2,14 +2,18 @@
 Flight Transfer Tools - 航班中转查询工具
 
 提供根据始发地、中转地、目的地查询飞机中转方案。
+支持 Chrome 和 Edge 浏览器（自动检测）
 """
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import logging
+import os
 from selenium import webdriver
 from selenium.webdriver import Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.edge.service import Service as EdgeService
 import time
 
 from ..core.flights import FlightSchedule, FlightPrice, Flight, SeatConfiguration, FlightTransfer
@@ -17,8 +21,80 @@ from ..core.flights import FlightSchedule, FlightPrice, Flight, SeatConfiguratio
 # 初始化日志器
 logger = logging.getLogger(__name__)
 
+# =================== 浏览器自动检测 ===================
 
-def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_place: str,departure_date: str, min_transfer_time: float = 2.0,
+# 常见浏览器路径
+BROWSER_PATHS = {
+    'chrome': [
+        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+    ],
+    'edge': [
+        r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+    ],
+}
+
+def get_available_browser_for_selenium() -> tuple:
+    """
+    自动检测可用的浏览器（用于 Selenium）
+
+    优先级: Chrome > Edge
+
+    Returns:
+        tuple: (浏览器类型 'chrome'/'edge', 浏览器路径) 或 (None, None)
+    """
+    for browser_type, paths in BROWSER_PATHS.items():
+        for path in paths:
+            if os.path.exists(path):
+                logger.info(f"[Selenium] 检测到可用浏览器: {browser_type} -> {path}")
+                return (browser_type, path)
+
+    logger.warning("[Selenium] 未检测到 Chrome 或 Edge 浏览器")
+    return (None, None)
+
+# 在模块加载时检测
+SELENIUM_BROWSER_TYPE, SELENIUM_BROWSER_PATH = get_available_browser_for_selenium()
+
+
+def create_selenium_driver():
+    """
+    创建 Selenium WebDriver，自动选择 Chrome 或 Edge
+
+    Returns:
+        WebDriver 实例
+    """
+    if SELENIUM_BROWSER_TYPE == 'chrome':
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        if SELENIUM_BROWSER_PATH:
+            options.binary_location = SELENIUM_BROWSER_PATH
+        logger.info(f"[Selenium] 使用 Chrome 浏览器")
+        return webdriver.Chrome(options=options)
+
+    elif SELENIUM_BROWSER_TYPE == 'edge':
+        options = webdriver.EdgeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        if SELENIUM_BROWSER_PATH:
+            options.binary_location = SELENIUM_BROWSER_PATH
+        logger.info(f"[Selenium] 使用 Edge 浏览器")
+        return webdriver.Edge(options=options)
+
+    else:
+        # 回退：尝试 Chrome（可能会失败）
+        logger.warning("[Selenium] 未检测到浏览器，尝试使用默认 Chrome")
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        return webdriver.Chrome(options=options)
+
+
+def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_place: str,departure_date: str = None, min_transfer_time: float = 2.0,
                                 max_transfer_time: float = 5.0) -> List[FlightTransfer]:
     """
    查询从出发地通过中转地到目的地的联程航班信息。
@@ -27,26 +103,56 @@ def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_plac
         from_place (str): 出发地城市或机场
         transfer_place (str): 中转地城市或机场
         to_place (str): 目的地城市或机场
+        departure_date (str): 出发日期（可选）
         min_transfer_time (float): 最小中转时间（单位：小时），默认 2 小时
         max_transfer_time (float): 最大中转时间（单位：小时），默认 5 小时
 
     Returns:
         List[str]: 符合条件的航班列表，每个航班用字典表示。
     """
+    # [临时测试] 详细调试日志 - 调通后记得删除
+    import time as _time
+    _start_time = _time.time()
+    logger.info("=" * 60)
+    logger.info(f"[DEBUG] getTransferFlightsByThreePlace 开始")
+    logger.info(f"[DEBUG] 参数: from_place={from_place}, transfer_place={transfer_place}, to_place={to_place}")
+    logger.info(f"[DEBUG] departure_date={departure_date}, min_transfer_time={min_transfer_time}, max_transfer_time={max_transfer_time}")
     logger.info(f"开始查询中转航班...")
     logger.info(f"始发地: {from_place}，中转地：{transfer_place}， 目的地: {to_place}")
 
     try:
         # 获取所有城市的三字码
+        logger.info(f"[DEBUG] 开始获取城市三字码...")
+        logger.info(f"[DEBUG] 正在查询 {from_place} 的三字码...")
+        _code_start = _time.time()
         from_code = _get_location_codev2(from_place)
+        logger.info(f"[DEBUG] {from_place} -> {from_code}, 耗时: {_time.time() - _code_start:.2f}s")
+
+        logger.info(f"[DEBUG] 正在查询 {transfer_place} 的三字码...")
+        _code_start = _time.time()
         transfer_code = _get_location_codev2(transfer_place)
+        logger.info(f"[DEBUG] {transfer_place} -> {transfer_code}, 耗时: {_time.time() - _code_start:.2f}s")
+
+        logger.info(f"[DEBUG] 正在查询 {to_place} 的三字码...")
+        _code_start = _time.time()
         to_code = _get_location_codev2(to_place)
+        logger.info(f"[DEBUG] {to_place} -> {to_code}, 耗时: {_time.time() - _code_start:.2f}s")
 
         logger.info(f"三字码查询成功！始发地: {from_code}，中转地{transfer_code}， 目的地: {to_code}")
 
         # 获取两段行程列表
+        logger.info(f"[DEBUG] 开始查询第一段行程 {from_code} -> {transfer_code}...")
+        _trip_start = _time.time()
         first_trips = _get_direct_airline(from_code, transfer_code)
+        first_trips = first_trips or []  # 确保不是 None
+        logger.info(f"[DEBUG] 第一段行程查询完成，耗时: {_time.time() - _trip_start:.2f}s, 找到 {len(first_trips)} 个航班")
+
+        logger.info(f"[DEBUG] 开始查询第二段行程 {transfer_code} -> {to_code}...")
+        _trip_start = _time.time()
         after_trips = _get_direct_airline(transfer_code, to_code)
+        after_trips = after_trips or []  # 确保不是 None
+        logger.info(f"[DEBUG] 第二段行程查询完成，耗时: {_time.time() - _trip_start:.2f}s, 找到 {len(after_trips)} 个航班")
+
         logger.info(f"行程分段查询成功！ {from_place} - {transfer_place} {len(first_trips)}")
         logger.info(f"{transfer_place} - {to_place} {len(after_trips)}")
 
@@ -77,9 +183,15 @@ def getTransferFlightsByThreePlace(from_place: str, transfer_place: str, to_plac
                     select_trips.append(transfer)
 
         logger.info(f"查询到 {len(select_trips)} 条中转航班信息")
+        logger.info(f"[DEBUG] getTransferFlightsByThreePlace 总耗时: {_time.time() - _start_time:.2f}s")
+        logger.info("=" * 60)
         return select_trips
     except Exception as e:
+        logger.error(f"[DEBUG] getTransferFlightsByThreePlace 异常: {type(e).__name__}: {str(e)}")
         logger.warning(f"查询中转航班信息失败：{from_place}-{transfer_place}-{to_place}, 错误: {str(e)}", exc_info=True)
+        logger.info(f"[DEBUG] getTransferFlightsByThreePlace 异常耗时: {_time.time() - _start_time:.2f}s")
+        logger.info("=" * 60)
+        return []  # 返回空列表而不是 None
 
 
 def _get_location_code(place: str) -> str:
@@ -91,9 +203,7 @@ def _get_location_code(place: str) -> str:
         Optional[str]: 对应的机场三字码，如 "PEK" 或 "PVG"；如果找不到则返回 None。
     '''
 
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # 无头模式，不打开浏览器窗口
-    driver = webdriver.Chrome(options=options)
+    driver = create_selenium_driver()
     try:
         url = 'http://szdm.00cha.net/'
 
@@ -135,14 +245,22 @@ def _get_location_codev2(place: str) -> str:
     Returns:
         Optional[str]: 对应的机场三字码，如 "PEK" 或 "PVG"；如果找不到则返回 None。
     '''
+    # [临时测试] 详细调试日志 - 调通后记得删除
+    import time as _time
+    _start = _time.time()
+    logger.info(f"[DEBUG] _get_location_codev2({place}) 开始")
 
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # 无头模式，不打开浏览器窗口
-    driver = webdriver.Chrome(options=options)
+    driver = None
     try:
-        url = 'https://www.chahangxian.com/'  # 示例：百度汉语
+        logger.info(f"[DEBUG] 正在创建 WebDriver (自动检测浏览器)...")
+        _driver_start = _time.time()
+        driver = create_selenium_driver()
+        logger.info(f"[DEBUG] WebDriver 创建成功，耗时: {_time.time() - _driver_start:.2f}s")
+
+        url = 'https://www.chahangxian.com/'
 
         # 打开网页
+        logger.info(f"[DEBUG] 正在访问 {url}...")
         driver.get(url)
         time.sleep(2)
 
@@ -150,16 +268,24 @@ def _get_location_codev2(place: str) -> str:
         search_box = driver.find_element(By.CLASS_NAME, "search")
 
         # 百度汉语的输入框ID是kw
-        input_box = search_box.find_element(By.NAME, "keyword")  # 百度汉语的输入框ID是kw
+        input_box = search_box.find_element(By.NAME, "keyword")
         input_box.clear()
         input_box.send_keys(place)
         input_box.send_keys(Keys.ENTER)
         time.sleep(2)
-        return driver.current_url.split("/")[-2]
+        result = driver.current_url.split("/")[-2]
+        logger.info(f"[DEBUG] _get_location_codev2({place}) 完成，结果: {result}, 总耗时: {_time.time() - _start:.2f}s")
+        return result
     except Exception as e:
+        logger.error(f"[DEBUG] _get_location_codev2({place}) 异常: {type(e).__name__}: {str(e)}")
         logger.warning(f"查询{place}城市三字码错误" + str(e))
+        return None
     finally:
-        driver.close()
+        if driver:
+            try:
+                driver.close()
+            except:
+                pass
 
 
 def _get_direct_airline(from_code: str, to_code: str) -> list:
@@ -168,11 +294,20 @@ def _get_direct_airline(from_code: str, to_code: str) -> list:
     :param to_code:
     :return:
     '''
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # 无头模式，不打开浏览器窗口
-    driver = webdriver.Chrome(options=options)
+    # [临时测试] 详细调试日志 - 调通后记得删除
+    import time as _time
+    _start = _time.time()
+    logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 开始")
+
+    driver = None
     try:
+        logger.info(f"[DEBUG] 正在创建 WebDriver (自动检测浏览器)...")
+        _driver_start = _time.time()
+        driver = create_selenium_driver()
+        logger.info(f"[DEBUG] WebDriver 创建成功，耗时: {_time.time() - _driver_start:.2f}s")
+
         url = f"https://www.chahangxian.com/{from_code.lower()}-{to_code.lower()}/"
+        logger.info(f"[DEBUG] 正在访问 {url}...")
         driver.get(url)
         time.sleep(1)
 
@@ -217,13 +352,21 @@ def _get_direct_airline(from_code: str, to_code: str) -> list:
                     result.append(flight)
             if len(result) == 0:
                 logger.warning("没有直飞，建议转机")
+                logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 完成，无直飞，总耗时: {_time.time() - _start:.2f}s")
+                return []
             else:
-                # print(len(result), result)
+                logger.info(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 完成，找到 {len(result)} 个航班，总耗时: {_time.time() - _start:.2f}s")
                 return result
     except Exception as e:
+        logger.error(f"[DEBUG] _get_direct_airline({from_code}, {to_code}) 异常: {type(e).__name__}: {str(e)}")
         logger.warning(f"直飞查询失败 {from_code}-{to_code}" + str(e))
+        return []
     finally:
-        driver.close()
+        if driver:
+            try:
+                driver.close()
+            except:
+                pass
 
 
 if __name__ == '__main__':
