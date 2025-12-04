@@ -8,15 +8,24 @@
 2. 支持多模式组合：飞机→飞机、飞机→高铁、高铁→飞机、高铁→高铁
 3. 结果存储后由程序/AI智能组合出最优方案
 4. 国际城市只查机票，不查火车票
+5. 智能路线类型检测：自动识别国内、国际路线，选择合适的中转枢纽
 """
 
 import threading
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Callable, Any, Set
+from typing import Dict, List, Optional, Callable, Any, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+
+# 导入中转枢纽管理器
+from transfer_hubs import (
+    hub_manager,
+    detect_route_type,
+    get_route_type_description,
+    RouteType
+)
 
 
 # 国际城市列表（这些城市没有中国火车站代码）
@@ -144,6 +153,58 @@ class SegmentQueryEngine:
 
         # 机票服务预热状态
         self._flight_warmed_up = False
+
+        # 路线信息缓存（用于UI显示）
+        self._route_info: Optional[Dict] = None
+
+    def get_smart_hub_cities(
+        self,
+        origin: str,
+        destination: str,
+        max_count: int = 15,
+        transport_type: str = "all"
+    ) -> Tuple[List[str], RouteType, str]:
+        """
+        智能获取中转枢纽城市
+
+        根据出发地和目的地自动检测路线类型，返回最合适的中转枢纽。
+
+        Args:
+            origin: 出发城市
+            destination: 目的城市
+            max_count: 最大枢纽数量
+            transport_type: 交通方式 ("all", "flight", "train")
+
+        Returns:
+            Tuple[List[str], RouteType, str]:
+                - 推荐的中转城市列表
+                - 检测到的路线类型
+                - 提示信息（用于UI显示）
+        """
+        hubs, route_type, tip = hub_manager.get_hubs_for_route(
+            origin, destination, max_count, transport_type
+        )
+
+        # 缓存路线信息
+        self._route_info = {
+            "route_type": route_type,
+            "route_type_name": get_route_type_description(route_type),
+            "is_international": route_type != RouteType.DOMESTIC,
+            "hub_count": len(hubs),
+            "hubs": hubs,
+            "tip_message": tip,
+        }
+
+        return hubs, route_type, tip
+
+    def get_route_info(self) -> Optional[Dict]:
+        """
+        获取当前路线信息（用于UI显示）
+
+        Returns:
+            包含路线类型、国际化状态、枢纽信息的字典，如果未执行过查询则返回 None
+        """
+        return self._route_info
 
     def log(self, message: str):
         """记录日志"""

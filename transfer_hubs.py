@@ -3,11 +3,52 @@
 中转枢纽配置模块
 基于《中国综合交通枢纽节点配置》文档
 为 Go-home 智能行程规划系统提供中转枢纽数据支持
+
+支持功能：
+1. 国内中转枢纽（44个）
+2. 国际中转枢纽（按区域划分）
+3. 智能路线类型检测
+4. 基于路线类型的枢纽推荐
 """
 
 from dataclasses import dataclass
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Tuple
 from enum import Enum
+
+
+# =================== 区域定义 ===================
+
+class Region(Enum):
+    """地理区域"""
+    # 中国国内区域
+    CHINA_NORTH = "华北"      # 北京、天津、河北、山西、内蒙古
+    CHINA_NORTHEAST = "东北"  # 辽宁、吉林、黑龙江
+    CHINA_EAST = "华东"       # 上海、江苏、浙江、安徽、福建、江西、山东
+    CHINA_CENTRAL = "华中"    # 河南、湖北、湖南
+    CHINA_SOUTH = "华南"      # 广东、广西、海南
+    CHINA_SOUTHWEST = "西南"  # 重庆、四川、贵州、云南、西藏
+    CHINA_NORTHWEST = "西北"  # 陕西、甘肃、青海、宁夏、新疆
+    # 国际区域
+    SOUTHEAST_ASIA = "东南亚"
+    EAST_ASIA = "东亚"
+    SOUTH_ASIA = "南亚"
+    MIDDLE_EAST = "中东"
+    EUROPE = "欧洲"
+    NORTH_AMERICA = "北美"
+    SOUTH_AMERICA = "南美"
+    OCEANIA = "大洋洲"
+    AFRICA = "非洲"
+    HK_MACAO_TAIWAN = "港澳台"
+
+
+class RouteType(Enum):
+    """路线类型"""
+    DOMESTIC = "domestic"                    # 国内 → 国内
+    DOMESTIC_TO_SOUTHEAST_ASIA = "domestic_to_southeast_asia"  # 国内 → 东南亚
+    DOMESTIC_TO_EAST_ASIA = "domestic_to_east_asia"            # 国内 → 东亚
+    DOMESTIC_TO_LONG_HAUL = "domestic_to_long_haul"            # 国内 → 欧美/大洋洲等远程
+    INTERNATIONAL_TO_DOMESTIC = "international_to_domestic"     # 国际 → 国内
+    INTERNATIONAL = "international"          # 国际 → 国际
 
 
 class HubType(Enum):
@@ -547,6 +588,325 @@ REGIONAL_STRATEGIES = {
 }
 
 
+# =================== 国际中转枢纽配置 ===================
+
+# 城市到区域的映射
+CITY_TO_REGION: Dict[str, Region] = {
+    # 中国国内城市
+    "北京": Region.CHINA_NORTH, "天津": Region.CHINA_NORTH, "石家庄": Region.CHINA_NORTH,
+    "太原": Region.CHINA_NORTH, "呼和浩特": Region.CHINA_NORTH,
+    "沈阳": Region.CHINA_NORTHEAST, "大连": Region.CHINA_NORTHEAST, "长春": Region.CHINA_NORTHEAST,
+    "哈尔滨": Region.CHINA_NORTHEAST,
+    "上海": Region.CHINA_EAST, "南京": Region.CHINA_EAST, "杭州": Region.CHINA_EAST,
+    "合肥": Region.CHINA_EAST, "福州": Region.CHINA_EAST, "南昌": Region.CHINA_EAST,
+    "济南": Region.CHINA_EAST, "青岛": Region.CHINA_EAST, "厦门": Region.CHINA_EAST,
+    "宁波": Region.CHINA_EAST, "温州": Region.CHINA_EAST, "烟台": Region.CHINA_EAST,
+    "徐州": Region.CHINA_EAST, "无锡": Region.CHINA_EAST, "常州": Region.CHINA_EAST,
+    "郑州": Region.CHINA_CENTRAL, "武汉": Region.CHINA_CENTRAL, "长沙": Region.CHINA_CENTRAL,
+    "广州": Region.CHINA_SOUTH, "深圳": Region.CHINA_SOUTH, "南宁": Region.CHINA_SOUTH,
+    "海口": Region.CHINA_SOUTH, "三亚": Region.CHINA_SOUTH, "桂林": Region.CHINA_SOUTH,
+    "重庆": Region.CHINA_SOUTHWEST, "成都": Region.CHINA_SOUTHWEST, "贵阳": Region.CHINA_SOUTHWEST,
+    "昆明": Region.CHINA_SOUTHWEST, "拉萨": Region.CHINA_SOUTHWEST,
+    "西安": Region.CHINA_NORTHWEST, "兰州": Region.CHINA_NORTHWEST, "西宁": Region.CHINA_NORTHWEST,
+    "银川": Region.CHINA_NORTHWEST, "乌鲁木齐": Region.CHINA_NORTHWEST,
+
+    # 东南亚
+    "曼谷": Region.SOUTHEAST_ASIA, "新加坡": Region.SOUTHEAST_ASIA, "吉隆坡": Region.SOUTHEAST_ASIA,
+    "雅加达": Region.SOUTHEAST_ASIA, "马尼拉": Region.SOUTHEAST_ASIA, "河内": Region.SOUTHEAST_ASIA,
+    "胡志明市": Region.SOUTHEAST_ASIA, "金边": Region.SOUTHEAST_ASIA, "万象": Region.SOUTHEAST_ASIA,
+    "仰光": Region.SOUTHEAST_ASIA, "清迈": Region.SOUTHEAST_ASIA, "普吉岛": Region.SOUTHEAST_ASIA,
+    "巴厘岛": Region.SOUTHEAST_ASIA, "岘港": Region.SOUTHEAST_ASIA, "暹粒": Region.SOUTHEAST_ASIA,
+
+    # 东亚
+    "东京": Region.EAST_ASIA, "大阪": Region.EAST_ASIA, "名古屋": Region.EAST_ASIA,
+    "福冈": Region.EAST_ASIA, "札幌": Region.EAST_ASIA, "冲绳": Region.EAST_ASIA,
+    "首尔": Region.EAST_ASIA, "釜山": Region.EAST_ASIA, "济州岛": Region.EAST_ASIA,
+
+    # 港澳台
+    "香港": Region.HK_MACAO_TAIWAN, "中国香港": Region.HK_MACAO_TAIWAN,
+    "澳门": Region.HK_MACAO_TAIWAN, "中国澳门": Region.HK_MACAO_TAIWAN,
+    "台北": Region.HK_MACAO_TAIWAN, "中国台北": Region.HK_MACAO_TAIWAN,
+    "高雄": Region.HK_MACAO_TAIWAN, "中国高雄": Region.HK_MACAO_TAIWAN,
+
+    # 南亚
+    "新德里": Region.SOUTH_ASIA, "孟买": Region.SOUTH_ASIA, "班加罗尔": Region.SOUTH_ASIA,
+    "科伦坡": Region.SOUTH_ASIA, "马尔代夫": Region.SOUTH_ASIA, "加德满都": Region.SOUTH_ASIA,
+
+    # 中东
+    "迪拜": Region.MIDDLE_EAST, "阿布扎比": Region.MIDDLE_EAST, "多哈": Region.MIDDLE_EAST,
+    "利雅得": Region.MIDDLE_EAST, "伊斯坦布尔": Region.MIDDLE_EAST,
+
+    # 欧洲
+    "伦敦": Region.EUROPE, "巴黎": Region.EUROPE, "法兰克福": Region.EUROPE,
+    "阿姆斯特丹": Region.EUROPE, "慕尼黑": Region.EUROPE, "苏黎世": Region.EUROPE,
+    "罗马": Region.EUROPE, "米兰": Region.EUROPE, "马德里": Region.EUROPE,
+    "巴塞罗那": Region.EUROPE, "维也纳": Region.EUROPE, "莫斯科": Region.EUROPE,
+    "赫尔辛基": Region.EUROPE,
+
+    # 北美
+    "纽约": Region.NORTH_AMERICA, "洛杉矶": Region.NORTH_AMERICA, "旧金山": Region.NORTH_AMERICA,
+    "芝加哥": Region.NORTH_AMERICA, "西雅图": Region.NORTH_AMERICA, "波士顿": Region.NORTH_AMERICA,
+    "华盛顿": Region.NORTH_AMERICA, "温哥华": Region.NORTH_AMERICA, "多伦多": Region.NORTH_AMERICA,
+
+    # 大洋洲
+    "悉尼": Region.OCEANIA, "墨尔本": Region.OCEANIA, "奥克兰": Region.OCEANIA,
+
+    # 非洲
+    "开罗": Region.AFRICA, "约翰内斯堡": Region.AFRICA,
+}
+
+# 国际中转枢纽城市（按区域分组）- 扩展版，覆盖全球主要航空枢纽
+INTERNATIONAL_HUBS: Dict[str, List[str]] = {
+    # =================== 亚洲区域 ===================
+    # 亚洲门户枢纽（用于国内↔欧美长途）- 扩展到10个
+    "亚洲门户": [
+        "香港", "东京", "首尔", "台北", "新加坡",
+        "大阪", "名古屋", "福冈", "釜山", "澳门"
+    ],
+
+    # 东南亚枢纽（用于国内↔东南亚）- 扩展到15个
+    "东南亚枢纽": [
+        "曼谷", "新加坡", "吉隆坡", "雅加达", "马尼拉",
+        "河内", "胡志明市", "金边", "万象", "仰光",
+        "清迈", "普吉岛", "巴厘岛", "岘港", "暹粒"
+    ],
+
+    # =================== 中东区域 ===================
+    # 中东枢纽（用于国内↔欧洲/非洲）- 扩展到10个
+    "中东枢纽": [
+        "迪拜", "多哈", "阿布扎比", "利雅得", "吉达",
+        "科威特", "巴林", "马斯喀特", "伊斯坦布尔", "安曼"
+    ],
+
+    # =================== 欧洲区域 ===================
+    # 欧洲枢纽（用于欧洲内部中转）- 扩展到20个
+    "欧洲枢纽": [
+        "伦敦", "巴黎", "法兰克福", "阿姆斯特丹", "慕尼黑",
+        "苏黎世", "罗马", "米兰", "马德里", "巴塞罗那",
+        "维也纳", "布鲁塞尔", "赫尔辛基", "莫斯科", "圣彼得堡",
+        "斯德哥尔摩", "哥本哈根", "华沙", "布拉格", "都柏林"
+    ],
+
+    # =================== 北美区域 ===================
+    # 北美枢纽（用于北美内部中转）- 扩展到15个
+    "北美枢纽": [
+        "洛杉矶", "旧金山", "西雅图", "温哥华", "纽约",
+        "芝加哥", "波士顿", "华盛顿", "达拉斯", "休斯顿",
+        "亚特兰大", "迈阿密", "多伦多", "蒙特利尔", "丹佛"
+    ],
+
+    # =================== 大洋洲区域 ===================
+    # 大洋洲枢纽 - 新增8个
+    "大洋洲枢纽": [
+        "悉尼", "墨尔本", "布里斯班", "珀斯", "奥克兰",
+        "斐济", "关岛", "檀香山"
+    ],
+
+    # =================== 南亚区域 ===================
+    # 南亚枢纽 - 新增8个
+    "南亚枢纽": [
+        "新德里", "孟买", "班加罗尔", "科伦坡", "马尔代夫",
+        "加德满都", "达卡", "卡拉奇"
+    ],
+
+    # =================== 非洲区域 ===================
+    # 非洲枢纽 - 新增6个
+    "非洲枢纽": [
+        "开罗", "约翰内斯堡", "开普敦", "内罗毕", "卡萨布兰卡",
+        "亚的斯亚贝巴"
+    ],
+
+    # =================== 中南美区域 ===================
+    # 中南美枢纽 - 新增6个
+    "中南美枢纽": [
+        "墨西哥城", "圣保罗", "布宜诺斯艾利斯", "利马",
+        "波哥大", "巴拿马城"
+    ],
+
+    # =================== 国内门户 ===================
+    # 国内出境门户（用于出国首选）- 扩展到10个
+    "国内出境门户": [
+        "北京", "上海", "广州", "香港", "成都",
+        "昆明", "深圳", "西安", "重庆", "杭州"
+    ],
+
+    # 国内入境门户（用于回国首选）- 扩展到8个
+    "国内入境门户": [
+        "北京", "上海", "广州", "深圳", "成都",
+        "西安", "杭州", "南京"
+    ],
+}
+
+# 路线类型 → 推荐中转区域策略（扩展版 - 支持50+枢纽）
+ROUTE_TRANSFER_STRATEGY: Dict[RouteType, Dict[str, any]] = {
+    RouteType.DOMESTIC: {
+        "description": "国内到国内",
+        "use_domestic_hubs": True,
+        "use_international_hubs": False,
+        "hub_groups": [],  # 使用原有的44个国内枢纽
+    },
+    RouteType.DOMESTIC_TO_SOUTHEAST_ASIA: {
+        "description": "国内到东南亚",
+        "use_domestic_hubs": True,  # 华南门户（广州、昆明、深圳）有大量东南亚航线
+        "use_international_hubs": True,
+        "domestic_regions": [Region.CHINA_SOUTH, Region.CHINA_SOUTHWEST],  # 优先华南、西南
+        "hub_groups": ["东南亚枢纽", "亚洲门户", "国内出境门户"],
+        "recommended_domestic": ["广州", "昆明", "深圳", "香港", "南宁", "成都", "重庆"],
+    },
+    RouteType.DOMESTIC_TO_EAST_ASIA: {
+        "description": "国内到东亚（日韩港澳台）",
+        "use_domestic_hubs": True,
+        "use_international_hubs": True,
+        "domestic_regions": [Region.CHINA_EAST, Region.CHINA_NORTH, Region.CHINA_NORTHEAST],
+        "hub_groups": ["亚洲门户", "国内出境门户"],
+        "recommended_domestic": ["上海", "北京", "青岛", "大连", "沈阳", "天津", "杭州", "南京"],
+    },
+    RouteType.DOMESTIC_TO_LONG_HAUL: {
+        "description": "国内到欧美/大洋洲等远程",
+        "use_domestic_hubs": True,  # 改为True，国内大门户有直飞欧美航班
+        "use_international_hubs": True,
+        # 使用所有相关的国际枢纽组，不再限制recommended_international
+        "hub_groups": [
+            "亚洲门户",      # 10个：香港、东京、首尔、新加坡等
+            "中东枢纽",      # 10个：迪拜、多哈、阿布扎比等
+            "欧洲枢纽",      # 20个：伦敦、巴黎、法兰克福等
+            "北美枢纽",      # 15个：洛杉矶、纽约、芝加哥等
+            "大洋洲枢纽",    # 8个：悉尼、墨尔本等
+            "国内出境门户",  # 10个：北京、上海、广州等
+        ],
+        # 不设置 recommended_international，让 get_hubs_for_route 使用所有 hub_groups
+    },
+    RouteType.INTERNATIONAL_TO_DOMESTIC: {
+        "description": "国际回国内",
+        "use_domestic_hubs": True,  # 国内大门户接国际航班
+        "use_international_hubs": True,
+        "hub_groups": [
+            "亚洲门户",
+            "中东枢纽",
+            "欧洲枢纽",
+            "北美枢纽",
+            "国内入境门户",
+        ],
+        "recommended_domestic": ["北京", "上海", "广州", "深圳", "成都", "西安", "杭州", "南京"],
+    },
+    RouteType.INTERNATIONAL: {
+        "description": "国际到国际",
+        "use_domestic_hubs": False,
+        "use_international_hubs": True,
+        # 国际到国际，使用全球所有主要枢纽
+        "hub_groups": [
+            "亚洲门户",
+            "中东枢纽",
+            "欧洲枢纽",
+            "北美枢纽",
+            "大洋洲枢纽",
+            "南亚枢纽",
+            "非洲枢纽",
+            "中南美枢纽",
+        ],
+    },
+}
+
+
+def get_city_region(city: str) -> Optional[Region]:
+    """
+    获取城市所属区域
+
+    Args:
+        city: 城市名
+
+    Returns:
+        区域枚举值，如果未找到返回 None
+    """
+    # 精确匹配
+    if city in CITY_TO_REGION:
+        return CITY_TO_REGION[city]
+
+    # 模糊匹配（处理带后缀的城市名，如"曼谷素万那普"）
+    for city_name, region in CITY_TO_REGION.items():
+        if city_name in city or city in city_name:
+            return region
+
+    return None
+
+
+def is_chinese_domestic(city: str) -> bool:
+    """
+    检查城市是否是中国国内城市
+
+    Args:
+        city: 城市名
+
+    Returns:
+        True 如果是中国国内城市
+    """
+    region = get_city_region(city)
+    if region is None:
+        # 未知城市，假设是国内
+        return True
+
+    chinese_regions = {
+        Region.CHINA_NORTH, Region.CHINA_NORTHEAST, Region.CHINA_EAST,
+        Region.CHINA_CENTRAL, Region.CHINA_SOUTH, Region.CHINA_SOUTHWEST,
+        Region.CHINA_NORTHWEST
+    }
+    return region in chinese_regions
+
+
+def detect_route_type(from_city: str, to_city: str) -> RouteType:
+    """
+    检测路线类型
+
+    Args:
+        from_city: 出发城市
+        to_city: 目的城市
+
+    Returns:
+        路线类型
+    """
+    from_domestic = is_chinese_domestic(from_city)
+    to_domestic = is_chinese_domestic(to_city)
+
+    from_region = get_city_region(from_city)
+    to_region = get_city_region(to_city)
+
+    # 国内 → 国内
+    if from_domestic and to_domestic:
+        return RouteType.DOMESTIC
+
+    # 国内 → 国际
+    if from_domestic and not to_domestic:
+        # 判断目的地区域
+        if to_region == Region.SOUTHEAST_ASIA:
+            return RouteType.DOMESTIC_TO_SOUTHEAST_ASIA
+        elif to_region == Region.EAST_ASIA:
+            return RouteType.DOMESTIC_TO_EAST_ASIA
+        elif to_region == Region.HK_MACAO_TAIWAN:
+            return RouteType.DOMESTIC_TO_EAST_ASIA  # 港澳台视为东亚
+        else:
+            return RouteType.DOMESTIC_TO_LONG_HAUL
+
+    # 国际 → 国内
+    if not from_domestic and to_domestic:
+        return RouteType.INTERNATIONAL_TO_DOMESTIC
+
+    # 国际 → 国际
+    return RouteType.INTERNATIONAL
+
+
+def get_route_type_description(route_type: RouteType) -> str:
+    """获取路线类型的中文描述"""
+    descriptions = {
+        RouteType.DOMESTIC: "国内航线",
+        RouteType.DOMESTIC_TO_SOUTHEAST_ASIA: "国内→东南亚",
+        RouteType.DOMESTIC_TO_EAST_ASIA: "国内→东亚",
+        RouteType.DOMESTIC_TO_LONG_HAUL: "国内→远程国际",
+        RouteType.INTERNATIONAL_TO_DOMESTIC: "国际→国内",
+        RouteType.INTERNATIONAL: "国际航线",
+    }
+    return descriptions.get(route_type, "未知")
+
+
 class TransferHubManager:
     """中转枢纽管理器"""
 
@@ -555,6 +915,8 @@ class TransferHubManager:
         self.dual_airport_cities = DUAL_AIRPORT_CITIES
         self.transfer_time_config = TRANSFER_TIME_CONFIG
         self.regional_strategies = REGIONAL_STRATEGIES
+        self.international_hubs = INTERNATIONAL_HUBS
+        self.route_strategies = ROUTE_TRANSFER_STRATEGY
 
     def get_aviation_hubs(self, level: Optional[HubLevel] = None) -> List[TransferHub]:
         """获取航空枢纽列表"""
@@ -682,6 +1044,135 @@ class TransferHubManager:
             return self.dual_airport_cities[city]["penalty_factor"]
         return 1.0
 
+    def get_hubs_for_route(
+        self,
+        from_city: str,
+        to_city: str,
+        max_count: int = 15,
+        transport_type: str = "all"
+    ) -> Tuple[List[str], RouteType, str]:
+        """
+        根据路线智能选择中转枢纽城市
+
+        这是核心方法，根据出发地和目的地自动判断路线类型，
+        并返回最合适的中转枢纽城市列表。
+
+        Args:
+            from_city: 出发城市
+            to_city: 目的城市
+            max_count: 最大返回数量
+            transport_type: 交通类型 ("all", "flight", "train")
+
+        Returns:
+            Tuple[List[str], RouteType, str]:
+                - 推荐的中转城市列表
+                - 检测到的路线类型
+                - 提示信息（用于UI显示）
+        """
+        # 1. 检测路线类型
+        route_type = detect_route_type(from_city, to_city)
+        strategy = self.route_strategies.get(route_type, {})
+
+        hubs = []
+        tip_message = ""
+
+        # 2. 根据路线类型选择枢纽
+        if route_type == RouteType.DOMESTIC:
+            # 国内航线：使用原有的44个国内枢纽
+            if transport_type == "flight":
+                hubs = self.get_recommended_transfer_cities("flight", max_count)
+            elif transport_type == "train":
+                hubs = self.get_recommended_transfer_cities("train", max_count)
+            else:
+                hubs = self.get_recommended_transfer_cities("all", max_count)
+            tip_message = f"国内航线，使用 {len(hubs)} 个国内枢纽"
+
+        elif route_type == RouteType.DOMESTIC_TO_SOUTHEAST_ASIA:
+            # 国内→东南亚：华南门户 + 东南亚枢纽
+            domestic_hubs = strategy.get("recommended_domestic", [])
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+
+            # 去重并合并
+            hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
+            hubs = hubs[:max_count]
+            tip_message = f"国内→东南亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个东南亚枢纽"
+
+        elif route_type == RouteType.DOMESTIC_TO_EAST_ASIA:
+            # 国内→东亚：华东/华北门户 + 亚洲枢纽
+            domestic_hubs = strategy.get("recommended_domestic", [])
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+
+            hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
+            hubs = hubs[:max_count]
+            tip_message = f"国内→东亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个亚洲枢纽"
+
+        elif route_type == RouteType.DOMESTIC_TO_LONG_HAUL:
+            # 国内→远程国际（欧美等）：使用全球主要枢纽
+            # 优先从所有 hub_groups 收集（已扩展到73个枢纽）
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+            # 去重保序
+            hubs = list(dict.fromkeys(intl_hubs))[:max_count]
+            total_available = len(list(dict.fromkeys(intl_hubs)))
+            tip_message = f"国内→远程国际，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
+
+        elif route_type == RouteType.INTERNATIONAL_TO_DOMESTIC:
+            # 国际→国内：全球枢纽 + 国内大门户
+            domestic_hubs = strategy.get("recommended_domestic", [])
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+
+            # 合并国际枢纽和国内门户
+            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+            hubs = list(dict.fromkeys(all_hubs))[:max_count]
+            total_available = len(list(dict.fromkeys(all_hubs)))
+            tip_message = f"国际→国内，共有 {total_available} 个枢纽可用（国际+国内门户），已选择 {len(hubs)} 个"
+
+        elif route_type == RouteType.INTERNATIONAL:
+            # 国际→国际：使用全球所有主要枢纽
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+            hubs = list(dict.fromkeys(intl_hubs))[:max_count]
+            total_available = len(list(dict.fromkeys(intl_hubs)))
+            tip_message = f"国际航线，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
+
+        # 3. 排除出发地和目的地
+        hubs = [h for h in hubs if h != from_city and h != to_city]
+
+        return hubs, route_type, tip_message
+
+    def get_route_info(self, from_city: str, to_city: str) -> Dict[str, any]:
+        """
+        获取路线信息（用于UI显示）
+
+        Args:
+            from_city: 出发城市
+            to_city: 目的城市
+
+        Returns:
+            包含路线信息的字典
+        """
+        route_type = detect_route_type(from_city, to_city)
+        hubs, _, tip = self.get_hubs_for_route(from_city, to_city)
+
+        return {
+            "route_type": route_type,
+            "route_type_name": get_route_type_description(route_type),
+            "is_international": route_type != RouteType.DOMESTIC,
+            "recommended_hubs": hubs,
+            "hub_count": len(hubs),
+            "tip_message": tip,
+            "from_region": get_city_region(from_city),
+            "to_region": get_city_region(to_city),
+        }
+
 
 # 创建全局管理器实例
 hub_manager = TransferHubManager()
@@ -734,9 +1225,9 @@ if __name__ == "__main__":
     # 测试代码
     manager = TransferHubManager()
 
-    print("=" * 50)
+    print("=" * 60)
     print("中转枢纽管理器测试")
-    print("=" * 50)
+    print("=" * 60)
 
     print("\n航空枢纽（Level 1-2）:")
     for hub in manager.get_aviation_hubs():
@@ -755,7 +1246,28 @@ if __name__ == "__main__":
     print("\n推荐中转城市（全类型）:")
     print(f"  {manager.get_recommended_transfer_cities('all', 15)}")
 
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
+    print("智能路线枢纽选择测试")
+    print("=" * 60)
+
+    # 测试不同类型的路线
+    test_routes = [
+        ("北京", "上海"),       # 国内 → 国内
+        ("北京", "曼谷"),       # 国内 → 东南亚
+        ("上海", "东京"),       # 国内 → 东亚
+        ("北京", "旧金山"),     # 国内 → 远程国际
+        ("纽约", "成都"),       # 国际 → 国内
+        ("伦敦", "东京"),       # 国际 → 国际
+    ]
+
+    for from_city, to_city in test_routes:
+        hubs, route_type, tip = manager.get_hubs_for_route(from_city, to_city)
+        print(f"\n{from_city} → {to_city}")
+        print(f"  路线类型: {get_route_type_description(route_type)}")
+        print(f"  提示: {tip}")
+        print(f"  推荐枢纽: {', '.join(hubs[:8])}{'...' if len(hubs) > 8 else ''}")
+
+    print("\n" + "=" * 60)
     print("系统提示词补充（飞机+火车）:")
-    print("=" * 50)
+    print("=" * 60)
     print(get_transfer_hub_prompt("all", True))

@@ -21,12 +21,14 @@ from tkinter import messagebox
 from tkcalendar import DateEntry
 
 # 导入中转枢纽模块
-from transfer_hubs import get_transfer_hub_prompt, hub_manager
+from transfer_hubs import get_transfer_hub_prompt, hub_manager, RouteType
 
 # 导入分段查询引擎
 from segment_query import (
     SegmentQueryEngine,
-    calculate_adjusted_train_date
+    calculate_adjusted_train_date,
+    detect_route_type,
+    get_route_type_description
 )
 
 
@@ -578,12 +580,12 @@ class GoHomeApp(ctk.CTk):
         )
         self.hub_count_label.grid(row=0, column=0, padx=(0, 5))
 
-        # 枢纽数量选项：8个(快速)、20个(推荐)、44个(全面)
+        # 枢纽数量选项：8个(快速)、20个(推荐)、44个(国内全面)、70个(国际全面)
         self.hub_count_var = ctk.StringVar(value="20")
         self.hub_count_menu = ctk.CTkOptionMenu(
             self.hub_count_frame,
             variable=self.hub_count_var,
-            values=["8", "20", "44"],
+            values=["8", "20", "44", "70"],
             width=60,
             height=28,
             font=ctk.CTkFont(size=12),
@@ -603,7 +605,7 @@ class GoHomeApp(ctk.CTk):
         # 枢纽选择提示
         self.hub_tip_label = ctk.CTkLabel(
             self.hub_mode_frame,
-            text="💡 选44个可获得最低价格",
+            text="💡 国内选44个 | 国际选70个",
             font=ctk.CTkFont(size=10),
             text_color="gray"
         )
@@ -1294,18 +1296,34 @@ class GoHomeApp(ctk.CTk):
         - 支持跨模式组合：✈️→✈️、✈️→🚄、🚄→✈️、🚄→🚄
         - 结果存储后由程序组合出所有可能的路线
         - 最后让 AI 分析推荐最优方案
+        - 智能路线检测：自动识别国内/国际路线，选择合适的中转枢纽
         """
         transport = self.transport_var.get()
 
         # 获取用户选择的中转枢纽数量
         hub_count = int(self.hub_count_var.get())
 
-        # 获取推荐的中转枢纽城市
-        hub_cities = hub_manager.get_recommended_transfer_cities(transport, max_count=hub_count)
-        hub_cities = [h for h in hub_cities if h != from_city and h != to_city]
+        # 使用智能枢纽选择（根据路线类型自动选择合适的枢纽）
+        hub_cities, route_type, tip_message = hub_manager.get_hubs_for_route(
+            from_city, to_city, max_count=hub_count, transport_type=transport
+        )
 
-        self.after(0, lambda: self.log_message(f"[分段查询] 准备查询，中转城市({len(hub_cities)}个): {', '.join(hub_cities)}"))
-        self.after(0, lambda: self.append_result(f"\n\n🚀 启动分段查询引擎...\n中转枢纽({len(hub_cities)}个): {', '.join(hub_cities)}"))
+        # 获取路线类型描述
+        route_type_name = get_route_type_description(route_type)
+        is_international = route_type != RouteType.DOMESTIC
+
+        # 构建显示消息
+        if is_international:
+            # 国际路线：显示特殊提示
+            hub_preview = ", ".join(hub_cities[:5]) + ("..." if len(hub_cities) > 5 else "")
+            route_tip = f"🌍 检测到{route_type_name}，已自动启用国际中转枢纽 {len(hub_cities)} 个（{hub_preview}）"
+            self.after(0, lambda msg=route_tip: self.log_message(f"[智能枢纽] {msg}"))
+            self.after(0, lambda msg=route_tip: self.append_result(f"\n\n{msg}"))
+        else:
+            # 国内路线：显示普通提示
+            self.after(0, lambda: self.log_message(f"[分段查询] 准备查询，中转城市({len(hub_cities)}个): {', '.join(hub_cities)}"))
+
+        self.after(0, lambda: self.append_result(f"\n\n🚀 启动分段查询引擎...\n📍 路线类型: {route_type_name}\n🏙️ 中转枢纽({len(hub_cities)}个): {', '.join(hub_cities)}"))
 
         # 创建分段查询引擎
         def log_callback(msg):
@@ -1850,7 +1868,8 @@ class GoHomeApp(ctk.CTk):
         time_estimates = {
             "8": ("≈10-15分钟", "green"),
             "20": ("≈20-40分钟", "orange"),
-            "44": ("≈50-90分钟", "red")
+            "44": ("≈50-90分钟", "red"),
+            "70": ("≈90-150分钟", "red")  # 国际航线全面查询
         }
         time_text, color = time_estimates.get(value, ("≈20-40分钟", "orange"))
         self.hub_time_label.configure(text=time_text, text_color=color)
