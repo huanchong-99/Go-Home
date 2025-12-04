@@ -784,67 +784,120 @@ class FlightRouteSearcher:
     
     def _parse_flight_container(self, container, index: int) -> Optional[Dict[str, Any]]:
         """
-        解析单个航班容器
-        
+        解析单个航班容器（支持直达和中转航班）
+
         Args:
             container: 航班容器元素
             index: 航班序号
-            
+
         Returns:
             航班信息字典
         """
         flight_info = {'序号': index}
-        
+
         try:
             # 解析航空公司
             airline_span = container.ele('css:.airline-name span', timeout=1)
             if airline_span:
                 flight_info['航空公司'] = airline_span.text.strip()
-            
-            # 解析航班号
-            plane_no_span = container.ele('css:.plane-No', timeout=1)
-            if plane_no_span:
-                plane_text = plane_no_span.text.strip()
-                # 提取航班号（如MU6863）
-                flight_match = re.search(r'([A-Z]{2}\d{3,4})', plane_text)
+
+            # 解析所有航班号（支持中转航班有多个航班号）
+            plane_no_spans = container.eles('css:.plane-No', timeout=1)
+            flight_numbers = []
+            for span in plane_no_spans:
+                plane_text = span.text.strip()
+                # 提取航班号（如MU6863, CX337等）
+                flight_match = re.search(r'([A-Z0-9]{2}\d{3,4})', plane_text)
                 if flight_match:
-                    flight_info['航班号'] = flight_match.group(1)
-            
+                    flight_numbers.append(flight_match.group(1))
+
+            if flight_numbers:
+                if len(flight_numbers) == 1:
+                    flight_info['航班号'] = flight_numbers[0]
+                else:
+                    # 多个航班号表示中转航班
+                    flight_info['航班号'] = '/'.join(flight_numbers)
+                    flight_info['航班号列表'] = flight_numbers
+
+            # 检测航班类型：直达 or 中转
+            arrow_transfer = container.ele('css:.arrow-transfer', timeout=1)
+            if arrow_transfer:
+                # 中转航班
+                flight_info['航班类型'] = '中转'
+                transfer_text = arrow_transfer.text.strip()
+                # 提取中转次数（如"转1次"）
+                transfer_match = re.search(r'转(\d+)次', transfer_text)
+                if transfer_match:
+                    flight_info['中转次数'] = int(transfer_match.group(1))
+            else:
+                # 直达航班（有 arrow-oneway 或没有 arrow-transfer）
+                flight_info['航班类型'] = '直达'
+
+            # 解析中转信息（中转城市和等待时间）
+            transfer_info = container.ele('css:.transfer-info', timeout=1)
+            if transfer_info:
+                transfer_detail = transfer_info.text.strip()
+                # 格式如: "转中国香港1h35m" 或 "转香港2h15m"
+                # 提取中转城市和等待时间
+                transfer_match = re.search(r'转(.+?)(\d+h\d+m|\d+小时\d+分钟?)', transfer_detail)
+                if transfer_match:
+                    flight_info['中转城市'] = transfer_match.group(1).strip()
+                    flight_info['中转等待'] = transfer_match.group(2).strip()
+                else:
+                    # 尝试其他格式
+                    flight_info['中转信息'] = transfer_detail
+
+            # 解析总飞行时长
+            flight_consume = container.ele('css:.flight-consume', timeout=1)
+            if flight_consume:
+                duration_text = flight_consume.text.strip()
+                flight_info['总时长'] = duration_text
+                # 提取小时和分钟数用于计算
+                duration_match = re.search(r'(\d+)小时(\d+)分', duration_text)
+                if duration_match:
+                    hours = int(duration_match.group(1))
+                    minutes = int(duration_match.group(2))
+                    flight_info['总时长分钟'] = hours * 60 + minutes
+
             # 解析出发时间
             depart_time = container.ele('css:.depart-box .time', timeout=1)
             if depart_time:
                 flight_info['出发时间'] = depart_time.text.strip()
-            
+
             # 解析出发机场
             depart_airport = container.ele('css:.depart-box .name', timeout=1)
             if depart_airport:
                 flight_info['出发机场'] = depart_airport.text.strip()
-            
+
             # 解析出发航站楼
             depart_terminal = container.ele('css:.depart-box .terminal', timeout=1)
             if depart_terminal:
                 flight_info['出发航站楼'] = depart_terminal.text.strip()
-            
+
             # 解析到达时间
             arrive_time = container.ele('css:.arrive-box .time', timeout=1)
             if arrive_time:
                 arrival_text = arrive_time.text.strip()
                 # 处理跨天信息
-                if '+1天' in arrival_text:
-                    flight_info['到达时间'] = arrival_text.replace('+1天', ' +1天')
+                if '+1天' in arrival_text or '+2天' in arrival_text:
+                    flight_info['到达时间'] = arrival_text
+                    # 提取跨天数
+                    day_match = re.search(r'\+(\d+)天', arrival_text)
+                    if day_match:
+                        flight_info['跨天'] = int(day_match.group(1))
                 else:
                     flight_info['到达时间'] = arrival_text
-            
+
             # 解析到达机场
             arrive_airport = container.ele('css:.arrive-box .name', timeout=1)
             if arrive_airport:
                 flight_info['到达机场'] = arrive_airport.text.strip()
-            
+
             # 解析到达航站楼
             arrive_terminal = container.ele('css:.arrive-box .terminal', timeout=1)
             if arrive_terminal:
                 flight_info['到达航站楼'] = arrive_terminal.text.strip()
-            
+
             # 解析价格
             price_span = container.ele('css:.price', timeout=1)
             if price_span:
@@ -852,19 +905,24 @@ class FlightRouteSearcher:
                 # 处理价格格式
                 if '¥' in price_text:
                     flight_info['价格'] = price_text
+                    # 提取纯数字价格用于排序
+                    price_num_match = re.search(r'(\d+)', price_text)
+                    if price_num_match:
+                        flight_info['价格数值'] = int(price_num_match.group(1))
                 else:
                     # 提取数字价格
                     price_match = re.search(r'(\d+)', price_text)
                     if price_match:
                         flight_info['价格'] = f"¥{price_match.group(1)}"
-            
+                        flight_info['价格数值'] = int(price_match.group(1))
+
             # 检查是否有足够的信息
             if any(key in flight_info for key in ['航班号', '出发时间', '价格']):
                 return flight_info
             else:
                 logger.debug(f"航班 {index} 缺少必要信息")
                 return None
-                
+
         except Exception as e:
             logger.error(f"解析航班容器 {index} 详细信息失败: {str(e)}")
             return None
