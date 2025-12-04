@@ -102,6 +102,7 @@ a = Analysis(
     datas=[
         ('transfer_hubs.py', '.'),
         ('segment_query.py', '.'),
+        ('route_calculator.py', '.'),
     ] + all_datas,
     hiddenimports=[
         'customtkinter',
@@ -146,6 +147,7 @@ a = Analysis(
         'signal',
         'transfer_hubs',
         'segment_query',
+        'route_calculator',
     ] + all_hiddenimports,
     hookspath=[],
     hooksconfig={},
