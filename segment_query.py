@@ -27,6 +27,9 @@ from transfer_hubs import (
     RouteType
 )
 
+# 导入路线计算引擎
+from route_calculator import RouteCalculator, RoutePlan, TransportSegment
+
 
 # 国际城市列表（这些城市没有中国火车站代码）
 INTERNATIONAL_CITIES: Set[str] = {
@@ -137,7 +140,9 @@ class SegmentQueryEngine:
         self,
         mcp_manager,  # MCPServiceManager 实例
         log_callback: Optional[Callable[[str], None]] = None,
-        progress_callback: Optional[Callable[[int, int, str], None]] = None
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        accommodation_threshold_hours: int = 6,
+        accommodation_enabled: bool = True
     ):
         self.mcp_manager = mcp_manager
         self.log_callback = log_callback or (lambda msg: None)
@@ -156,6 +161,12 @@ class SegmentQueryEngine:
 
         # 路线信息缓存（用于UI显示）
         self._route_info: Optional[Dict] = None
+
+        # 路线计算引擎
+        self._route_calculator = RouteCalculator(
+            accommodation_threshold_hours=accommodation_threshold_hours,
+            accommodation_enabled=accommodation_enabled
+        )
 
     def get_smart_hub_cities(
         self,
@@ -653,20 +664,69 @@ class SegmentQueryEngine:
         destination: str,
         date: str,
         routes: List[RouteOption],
-        results: Dict[str, SegmentResult]
+        results: Dict[str, SegmentResult],
+        hub_cities: List[str] = None
     ) -> str:
         """
-        构建给 AI 分析的汇总消息
+        构建给 AI 分析的汇总消息（使用程序计算结果）
+
+        新版本：程序完成所有价格/时长计算，AI只负责自然语言描述
 
         Args:
             origin: 出发城市
             destination: 目的城市
             date: 出发日期
-            routes: 所有可能的路线
+            routes: 所有可能的路线（旧版兼容）
             results: 原始查询结果
+            hub_cities: 中转城市列表
 
         Returns:
-            格式化的汇总消息
+            格式化的汇总消息（包含程序计算结果）
+        """
+        # 将 SegmentResult 转换为计算引擎需要的格式
+        segment_data = {}
+        for seg_id, seg_result in results.items():
+            if seg_result.success and seg_result.data:
+                transport_type = "flight" if seg_result.mode == TransportMode.FLIGHT else "train"
+                segment_data[seg_id] = (transport_type, seg_result.data)
+
+        # 使用程序计算所有可行路线
+        if hub_cities is None:
+            hub_cities = []
+
+        self.log("[计算引擎] 开始计算所有可行路线组合...")
+
+        calculated_routes = self._route_calculator.calculate_all_routes(
+            origin=origin,
+            destination=destination,
+            date=date,
+            segment_data=segment_data,
+            hub_cities=hub_cities
+        )
+
+        self.log(f"[计算引擎] 计算完成，共 {len(calculated_routes)} 个可行方案")
+
+        # 使用计算引擎格式化输出
+        return self._route_calculator.format_routes_for_ai(
+            routes=calculated_routes,
+            origin=origin,
+            destination=destination,
+            date=date,
+            top_n=30
+        )
+
+    def build_summary_for_ai_legacy(
+        self,
+        origin: str,
+        destination: str,
+        date: str,
+        routes: List[RouteOption],
+        results: Dict[str, SegmentResult]
+    ) -> str:
+        """
+        构建给 AI 分析的汇总消息（旧版本，保留用于调试对比）
+
+        这是原始版本，把所有原始数据扔给AI进行计算
         """
         lines = [
             f"# {date} 从 {origin} 到 {destination} 的出行方案查询结果",

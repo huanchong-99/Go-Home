@@ -1332,10 +1332,16 @@ class GoHomeApp(ctk.CTk):
         def progress_callback(current, total, desc):
             self.after(0, lambda c=current, t=total, d=desc: self.show_progress(c, t, f"🔍 {d}"))
 
+        # 获取住宿配置
+        accommodation_enabled = self.config_manager.get("accommodation_enabled", True)
+        accommodation_threshold = self.config_manager.get("accommodation_threshold", 6)
+
         engine = SegmentQueryEngine(
             mcp_manager=self.mcp_manager,
             log_callback=log_callback,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            accommodation_threshold_hours=accommodation_threshold,
+            accommodation_enabled=accommodation_enabled
         )
 
         try:
@@ -1384,13 +1390,14 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda n=len(routes): self.log_message(f"[分段查询] 组合出 {n} 条可行路线"))
             self.after(0, lambda n=len(routes): self.append_result(f"\n\n🛤️ 组合出 {n} 条可行路线，正在让 AI 分析..."))
 
-            # 构建给 AI 的汇总消息
+            # 构建给 AI 的汇总消息（使用程序计算结果）
             summary_message = engine.build_summary_for_ai(
                 origin=from_city,
                 destination=to_city,
                 date=date,
                 routes=routes,
-                results=results
+                results=results,
+                hub_cities=hub_cities
             )
 
             # 调用 AI 分析
