@@ -2,6 +2,11 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-huanchong--99%2FGo--Home-blue?logo=github)](https://github.com/huanchong-99/Go-Home)
 
+推荐使用 SiliconFlow API（[注册链接](https://cloud.siliconflow.cn/i/JoeKp6UF)，邀请码：`JoeKp6UF`）
+- API Base URL：`https://api.siliconflow.cn/v1`
+- 提供多种高性价比模型选择
+- 国内访问速度快，稳定性好
+
 一款整合机票和火车票查询的智能出行规划软件，帮助你找到回家的最优交通组合方案。
 
 ## 功能特性
@@ -266,6 +271,11 @@ cp config.example.json config.json
 ```
 
 支持任何 OpenAI 兼容的 API 服务（如 Azure OpenAI、Claude API 代理等）。
+
+推荐使用 SiliconFlow API（[注册链接](https://cloud.siliconflow.cn/i/JoeKp6UF)，邀请码：`JoeKp6UF`）：
+- API Base URL：`https://api.siliconflow.cn/v1`
+- 提供多种高性价比模型选择
+- 国内访问速度快，稳定性好
 
 #### 4. 运行程序
 
