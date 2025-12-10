@@ -47,7 +47,9 @@ class RouteType(Enum):
     DOMESTIC_TO_SOUTHEAST_ASIA = "domestic_to_southeast_asia"  # 国内 → 东南亚
     DOMESTIC_TO_EAST_ASIA = "domestic_to_east_asia"            # 国内 → 东亚
     DOMESTIC_TO_LONG_HAUL = "domestic_to_long_haul"            # 国内 → 欧美/大洋洲等远程
-    INTERNATIONAL_TO_DOMESTIC = "international_to_domestic"     # 国际 → 国内
+    SOUTHEAST_ASIA_TO_DOMESTIC = "southeast_asia_to_domestic"  # 东南亚 → 国内
+    EAST_ASIA_TO_DOMESTIC = "east_asia_to_domestic"            # 东亚 → 国内
+    INTERNATIONAL_TO_DOMESTIC = "international_to_domestic"     # 其他国际 → 国内
     INTERNATIONAL = "international"          # 国际 → 国际
 
 
@@ -776,8 +778,22 @@ ROUTE_TRANSFER_STRATEGY: Dict[RouteType, Dict[str, any]] = {
         ],
         # 不设置 recommended_international，让 get_hubs_for_route 使用所有 hub_groups
     },
+    RouteType.SOUTHEAST_ASIA_TO_DOMESTIC: {
+        "description": "东南亚回国内",
+        "use_domestic_hubs": True,
+        "use_international_hubs": True,
+        "hub_groups": ["东南亚枢纽", "亚洲门户", "国内入境门户"],
+        "recommended_domestic": ["广州", "深圳", "昆明", "南宁", "香港", "成都", "上海", "北京"],
+    },
+    RouteType.EAST_ASIA_TO_DOMESTIC: {
+        "description": "东亚回国内",
+        "use_domestic_hubs": True,
+        "use_international_hubs": True,
+        "hub_groups": ["亚洲门户", "国内入境门户"],
+        "recommended_domestic": ["上海", "北京", "青岛", "大连", "沈阳", "天津", "杭州", "南京"],
+    },
     RouteType.INTERNATIONAL_TO_DOMESTIC: {
-        "description": "国际回国内",
+        "description": "远程国际回国内",
         "use_domestic_hubs": True,  # 国内大门户接国际航班
         "use_international_hubs": True,
         "hub_groups": [
@@ -888,7 +904,15 @@ def detect_route_type(from_city: str, to_city: str) -> RouteType:
 
     # 国际 → 国内
     if not from_domestic and to_domestic:
-        return RouteType.INTERNATIONAL_TO_DOMESTIC
+        # 判断出发地区域
+        if from_region == Region.SOUTHEAST_ASIA:
+            return RouteType.SOUTHEAST_ASIA_TO_DOMESTIC
+        elif from_region == Region.EAST_ASIA:
+            return RouteType.EAST_ASIA_TO_DOMESTIC
+        elif from_region == Region.HK_MACAO_TAIWAN:
+            return RouteType.EAST_ASIA_TO_DOMESTIC  # 港澳台视为东亚
+        else:
+            return RouteType.INTERNATIONAL_TO_DOMESTIC
 
     # 国际 → 国际
     return RouteType.INTERNATIONAL
@@ -901,7 +925,9 @@ def get_route_type_description(route_type: RouteType) -> str:
         RouteType.DOMESTIC_TO_SOUTHEAST_ASIA: "国内→东南亚",
         RouteType.DOMESTIC_TO_EAST_ASIA: "国内→东亚",
         RouteType.DOMESTIC_TO_LONG_HAUL: "国内→远程国际",
-        RouteType.INTERNATIONAL_TO_DOMESTIC: "国际→国内",
+        RouteType.SOUTHEAST_ASIA_TO_DOMESTIC: "东南亚→国内",
+        RouteType.EAST_ASIA_TO_DOMESTIC: "东亚→国内",
+        RouteType.INTERNATIONAL_TO_DOMESTIC: "远程国际→国内",
         RouteType.INTERNATIONAL: "国际航线",
     }
     return descriptions.get(route_type, "未知")
@@ -1121,8 +1147,32 @@ class TransferHubManager:
             total_available = len(list(dict.fromkeys(intl_hubs)))
             tip_message = f"国内→远程国际，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
 
+        elif route_type == RouteType.SOUTHEAST_ASIA_TO_DOMESTIC:
+            # 东南亚→国内：东南亚枢纽 + 亚洲门户 + 国内门户
+            domestic_hubs = strategy.get("recommended_domestic", [])
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+
+            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+            hubs = list(dict.fromkeys(all_hubs))[:max_count]
+            total_available = len(list(dict.fromkeys(all_hubs)))
+            tip_message = f"东南亚→国内，共有 {total_available} 个枢纽可用（东南亚+亚洲+国内门户），已选择 {len(hubs)} 个"
+
+        elif route_type == RouteType.EAST_ASIA_TO_DOMESTIC:
+            # 东亚→国内：亚洲门户 + 国内门户
+            domestic_hubs = strategy.get("recommended_domestic", [])
+            intl_hubs = []
+            for group in strategy.get("hub_groups", []):
+                intl_hubs.extend(self.international_hubs.get(group, []))
+
+            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+            hubs = list(dict.fromkeys(all_hubs))[:max_count]
+            total_available = len(list(dict.fromkeys(all_hubs)))
+            tip_message = f"东亚→国内，共有 {total_available} 个枢纽可用（亚洲+国内门户），已选择 {len(hubs)} 个"
+
         elif route_type == RouteType.INTERNATIONAL_TO_DOMESTIC:
-            # 国际→国内：全球枢纽 + 国内大门户
+            # 远程国际→国内：全球枢纽 + 国内大门户
             domestic_hubs = strategy.get("recommended_domestic", [])
             intl_hubs = []
             for group in strategy.get("hub_groups", []):
@@ -1132,7 +1182,7 @@ class TransferHubManager:
             all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
             hubs = list(dict.fromkeys(all_hubs))[:max_count]
             total_available = len(list(dict.fromkeys(all_hubs)))
-            tip_message = f"国际→国内，共有 {total_available} 个枢纽可用（国际+国内门户），已选择 {len(hubs)} 个"
+            tip_message = f"远程国际→国内，共有 {total_available} 个枢纽可用（全球枢纽+国内门户），已选择 {len(hubs)} 个"
 
         elif route_type == RouteType.INTERNATIONAL:
             # 国际→国际：使用全球所有主要枢纽
