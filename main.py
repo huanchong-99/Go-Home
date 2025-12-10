@@ -972,6 +972,19 @@ class GoHomeApp(ctk.CTk):
         )
         self.clear_btn.pack(side="left", padx=10)
 
+        self.export_btn = ctk.CTkButton(
+            btn_frame,
+            text="📄 导出结果",
+            command=self.export_results,
+            font=ctk.CTkFont(size=14),
+            width=120,
+            height=45,
+            fg_color="transparent",
+            border_width=2,
+            text_color=("gray10", "gray90")
+        )
+        self.export_btn.pack(side="left", padx=10)
+
         # 进度条区域
         self.progress_frame = ctk.CTkFrame(self.query_frame, fg_color="transparent")
         self.progress_frame.grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky="ew")
@@ -1086,6 +1099,92 @@ class GoHomeApp(ctk.CTk):
         """清空结果"""
         self.show_result("结果已清空，请开始新的查询。")
         self.log_message("结果已清空")
+        # 清空导出数据
+        self._last_export_data = None
+
+    def export_results(self):
+        """导出查询结果到txt文件"""
+        # 获取当前结果文本
+        current_text = self.result_textbox.get("1.0", "end").strip()
+
+        if not current_text or current_text == "结果已清空，请开始新的查询。":
+            messagebox.showwarning("导出失败", "没有可导出的结果！请先进行查询。")
+            return
+
+        # 生成默认文件名
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 从查询信息中提取出发地和目的地
+        origin = self.from_var.get().strip()
+        destination = self.to_var.get().strip()
+        date = self.date_entry.get()
+
+        default_filename = f"Go-home_查询结果_{origin}到{destination}_{date}_{timestamp}.txt"
+
+        # 打开文件保存对话框
+        from tkinter import filedialog
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            initialfile=default_filename,
+            filetypes=[
+                ("文本文件", "*.txt"),
+                ("所有文件", "*.*")
+            ],
+            title="导出查询结果"
+        )
+
+        if not filepath:
+            return  # 用户取消
+
+        try:
+            # 准备导出内容
+            export_content = []
+            export_content.append("=" * 80)
+            export_content.append("Go-home 智能出行规划系统 - 查询结果导出")
+            export_content.append("=" * 80)
+            export_content.append("")
+            export_content.append(f"查询时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            export_content.append(f"出发地: {origin}")
+            export_content.append(f"目的地: {destination}")
+            export_content.append(f"出发日期: {date}")
+            export_content.append(f"优先级: {self.priority_var.get()}")
+            export_content.append(f"交通方式: {self.transport_var.get()}")
+            export_content.append("")
+            export_content.append("=" * 80)
+            export_content.append("查询结果")
+            export_content.append("=" * 80)
+            export_content.append("")
+            export_content.append(current_text)
+            export_content.append("")
+            export_content.append("=" * 80)
+            export_content.append("说明")
+            export_content.append("=" * 80)
+            export_content.append("1. 价格仅供参考，实际购票请以官方平台为准")
+            export_content.append("2. 火车票数据基于12306官方API（仅支持15天内查询）")
+            export_content.append("3. 机票数据来源于携程网站")
+            export_content.append("4. 中转方案已考虑最小换乘时间要求")
+            if self.config_manager.get("accommodation_enabled", True):
+                threshold = self.config_manager.get("accommodation_threshold", 6)
+                export_content.append(f"5. 住宿费用：中转等待≥{threshold}小时且跨夜间或≥12小时，自动加¥200")
+            export_content.append("")
+            export_content.append("导出时间: " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            export_content.append("=" * 80)
+
+            # 写入文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(export_content))
+
+            # 显示成功消息
+            messagebox.showinfo(
+                "导出成功",
+                f"查询结果已成功导出到：\n{filepath}\n\n文件大小：{len('\n'.join(export_content))} 字符"
+            )
+            self.log_message(f"[导出] 结果已导出到: {filepath}")
+
+        except Exception as e:
+            messagebox.showerror("导出失败", f"导出文件时发生错误：\n{str(e)}")
+            self.log_message(f"[导出] 导出失败: {str(e)}")
 
     def update_time(self):
         """更新时间显示"""
@@ -1454,17 +1553,28 @@ class GoHomeApp(ctk.CTk):
             else:
                 accommodation_section = ""
 
+            # 获取用户优先级偏好
+            priority = self.priority_var.get()
+            priority_instruction = {
+                "cheap": "**重要**：用户选择了\"省钱优先\"，请务必推荐总价最低的方案（包含住宿费），即使需要多花一些时间。",
+                "fast": "**重要**：用户选择了\"省时优先\"，请务必推荐总时长最短的方案，价格可以适当高一些。",
+                "balanced": "**重要**：用户希望在价格和时间之间取得平衡，请推荐性价比最高的方案。"
+            }.get(priority, "")
+
             # 构建汇总分析的系统提示词
             system_prompt = f"""你是 Go-home 智能出行助手。用户已经通过程序查询了多个出行方案的数据，现在需要你分析这些数据并给出推荐。
 
+{priority_instruction}
+
 请注意：
-1. 仔细分析直达方案和中转方案的价格、时间对比
-2. 中转方案支持跨模式组合（如：飞机+高铁、高铁+飞机等）
-3. 中转方案要考虑换乘等待时间，建议预留 2-3 小时
-4. 推荐时要给出具体的推荐理由
-5. 使用清晰的格式，包含表格对比
-6. 如果某些查询结果为空或报错，请忽略该方案
-7. 国际城市（如曼谷）无法查询火车票，这是正常的
+1. **程序已经按总价升序排序**，列表中第一个方案通常是最便宜的
+2. 仔细分析直达方案和中转方案的价格、时间对比
+3. 中转方案支持跨模式组合（如：飞机+高铁、高铁+飞机等）
+4. 不要忽略高铁方案！高铁→飞机组合往往比飞机→飞机更便宜
+5. 推荐时要给出具体的推荐理由，说明为什么选择这个方案
+6. 使用清晰的格式，包含表格对比
+7. 如果某些查询结果为空或报错，请忽略该方案
+8. 国际城市（如曼谷）无法查询火车票，这是正常的
 
 【12306查询限制说明】
 火车票数据可能是15天内的参考数据，实际购票以12306为准。
@@ -1472,7 +1582,7 @@ class GoHomeApp(ctk.CTk):
 【跨模式中转说明】
 - ✈️→✈️：全程飞机中转
 - ✈️→🚄：先飞机后高铁
-- 🚄→✈️：先高铁后飞机
+- 🚄→✈️：先高铁后飞机（往往比全飞机便宜！）
 - 🚄→🚄：全程火车中转
 {accommodation_section}"""
 
