@@ -168,6 +168,64 @@ class SegmentQueryEngine:
             accommodation_enabled=accommodation_enabled
         )
 
+    def _is_valid_response(self, data: str) -> bool:
+        """
+        检查MCP返回的数据是否有效
+
+        Args:
+            data: MCP工具返回的字符串数据
+
+        Returns:
+            True 如果数据有效，False 如果是错误或超时
+        """
+        if not data:
+            return False
+
+        # 转为小写进行检查
+        data_lower = data.lower()
+
+        # 检查常见的错误标识
+        error_indicators = [
+            "超时",
+            "timeout",
+            "error",
+            "failed",
+            "失败",
+            "异常",
+            "exception",
+            "无法",
+            "cannot",
+            "未找到",
+            "not found",
+            "无数据",
+            "no data",
+            "查询失败"
+        ]
+
+        for indicator in error_indicators:
+            if indicator in data_lower:
+                return False
+
+        # 检查是否包含有效数据的标识（JSON格式或结构化数据）
+        # 火车票和机票数据通常包含这些关键字
+        valid_indicators = [
+            "flight",
+            "train",
+            "航班",
+            "车次",
+            "price",
+            "价格",
+            "departure",
+            "arrival",
+            "出发",
+            "到达"
+        ]
+
+        # 至少包含一个有效标识才认为是有效数据
+        has_valid_indicator = any(indicator in data_lower for indicator in valid_indicators)
+
+        return has_valid_indicator
+
     def get_smart_hub_cities(
         self,
         origin: str,
@@ -373,7 +431,13 @@ class SegmentQueryEngine:
                     }
                 )
                 result.data = data
-                result.success = True
+
+                # 检查返回的数据是否有效
+                if self._is_valid_response(data):
+                    result.success = True
+                else:
+                    result.success = False
+                    result.error = "查询失败或超时"
 
             elif query.mode == TransportMode.TRAIN:
                 # 查询火车票
@@ -404,7 +468,13 @@ class SegmentQueryEngine:
                     }
                 )
                 result.data = data
-                result.success = True
+
+                # 检查返回的数据是否有效
+                if self._is_valid_response(data):
+                    result.success = True
+                else:
+                    result.success = False
+                    result.error = "查询失败或超时"
 
         except Exception as e:
             result.error = str(e)
