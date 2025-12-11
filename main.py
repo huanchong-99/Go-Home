@@ -1191,7 +1191,7 @@ class GoHomeApp(ctk.CTk):
                 export_content.append(f"查询ID: {seg_id}")
                 export_content.append(f"路线: {seg_result.from_city} {mode_icon} {seg_result.to_city}")
                 export_content.append(f"交通方式: {mode_name}")
-                export_content.append(f"查询日期: {seg_result.date}")
+                export_content.append(f"查询日期: {date}")  # 使用query_info中的date
                 export_content.append(f"查询状态: {'✓ 成功' if seg_result.success else '✗ 失败'}")
                 if seg_result.error:
                     export_content.append(f"错误信息: {seg_result.error}")
@@ -1233,7 +1233,7 @@ class GoHomeApp(ctk.CTk):
                     export_content.append(f"方案 {i}: {route.description}")
                     export_content.append(f"  交通方式: {mode_name}")
                     export_content.append(f"  路线详情:")
-                    export_content.append(f"    {seg.from_city} {mode_icon} {seg.to_city} ({seg.date})")
+                    export_content.append(f"    {seg.from_city} {mode_icon} {seg.to_city} ({date})")  # 使用query_info中的date
                     export_content.append(f"  查询数据:")
                     if seg.data:
                         # 缩进数据内容
@@ -1266,7 +1266,7 @@ class GoHomeApp(ctk.CTk):
                             mode_icon = "✈️" if seg.mode.value == "flight" else "🚄"
                             mode_name = "机票" if seg.mode.value == "flight" else "火车票"
                             leg_name = "第一程" if j == 1 else "第二程"
-                            export_content.append(f"      {leg_name}: {seg.from_city} {mode_icon} {seg.to_city} ({mode_name}, {seg.date})")
+                            export_content.append(f"      {leg_name}: {seg.from_city} {mode_icon} {seg.to_city} ({mode_name}, {date})")  # 使用query_info中的date
                             export_content.append(f"      查询数据:")
                             if seg.data:
                                 for line in seg.data.split('\n')[:50]:  # 限制行数避免文件过大
