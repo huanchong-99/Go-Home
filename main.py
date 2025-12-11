@@ -432,6 +432,13 @@ class GoHomeApp(ctk.CTk):
         # 中转枢纽模式状态（默认开启）
         self.transfer_hub_mode = True
 
+        # 保存原始查询数据（用于导出）
+        self.last_query_data = {
+            "segment_results": {},  # 所有单段查询结果
+            "combined_routes": [],  # 所有组合路线
+            "query_info": {},  # 查询信息（出发地、目的地、日期等）
+        }
+
         # 创建 UI
         self.create_ui()
 
@@ -1116,11 +1123,9 @@ class GoHomeApp(ctk.CTk):
         self._last_export_data = None
 
     def export_results(self):
-        """导出查询结果到txt文件"""
-        # 获取当前结果文本
-        current_text = self.result_textbox.get("1.0", "end").strip()
-
-        if not current_text or current_text == "结果已清空，请开始新的查询。":
+        """导出查询结果到txt文件（导出所有原始查询数据）"""
+        # 检查是否有原始数据
+        if not self.last_query_data.get("segment_results"):
             messagebox.showwarning("导出失败", "没有可导出的结果！请先进行查询。")
             return
 
@@ -1129,11 +1134,12 @@ class GoHomeApp(ctk.CTk):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # 从查询信息中提取出发地和目的地
-        origin = self.from_city_entry.get().strip() if self.from_city_entry.get() else "未知"
-        destination = self.to_city_entry.get().strip() if self.to_city_entry.get() else "未知"
-        date = self.date_entry.get() if hasattr(self, 'date_entry') else "未知"
+        query_info = self.last_query_data.get("query_info", {})
+        origin = query_info.get("origin", "未知")
+        destination = query_info.get("destination", "未知")
+        date = query_info.get("date", "未知")
 
-        default_filename = f"Go-home_查询结果_{origin}到{destination}_{date}_{timestamp}.txt"
+        default_filename = f"Go-home_完整数据_{origin}到{destination}_{date}_{timestamp}.txt"
 
         # 打开文件保存对话框
         from tkinter import filedialog
@@ -1144,7 +1150,7 @@ class GoHomeApp(ctk.CTk):
                 ("文本文件", "*.txt"),
                 ("所有文件", "*.*")
             ],
-            title="导出查询结果"
+            title="导出完整查询数据"
         )
 
         if not filepath:
@@ -1153,47 +1159,154 @@ class GoHomeApp(ctk.CTk):
         try:
             # 准备导出内容
             export_content = []
-            export_content.append("=" * 80)
-            export_content.append("Go-home 智能出行规划系统 - 查询结果导出")
-            export_content.append("=" * 80)
+            export_content.append("=" * 100)
+            export_content.append("Go-home 智能出行规划系统 - 完整查询数据导出")
+            export_content.append("=" * 100)
             export_content.append("")
-            export_content.append(f"查询时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            export_content.append(f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             export_content.append(f"出发地: {origin}")
             export_content.append(f"目的地: {destination}")
             export_content.append(f"出发日期: {date}")
-            export_content.append(f"优先级: {self.priority_var.get()}")
-            export_content.append(f"交通方式: {self.transport_var.get()}")
+            export_content.append(f"优先级: {query_info.get('priority', '未知')}")
+            export_content.append(f"交通方式: {query_info.get('transport', '未知')}")
+            hub_cities = query_info.get('hub_cities', [])
+            export_content.append(f"中转枢纽({len(hub_cities)}个): {', '.join(hub_cities)}")
             export_content.append("")
-            export_content.append("=" * 80)
-            export_content.append("查询结果")
-            export_content.append("=" * 80)
+
+            # 第一部分：所有单段查询结果
+            export_content.append("=" * 100)
+            export_content.append("第一部分：所有单段查询结果（原始数据）")
+            export_content.append("=" * 100)
             export_content.append("")
-            export_content.append(current_text)
+
+            segment_results = self.last_query_data.get("segment_results", {})
+            success_count = sum(1 for r in segment_results.values() if r.success)
+            export_content.append(f"共查询 {len(segment_results)} 个单段，成功 {success_count} 个")
             export_content.append("")
-            export_content.append("=" * 80)
+
+            for seg_id, seg_result in segment_results.items():
+                mode_icon = "✈️" if seg_result.mode.value == "flight" else "🚄"
+                mode_name = "机票" if seg_result.mode.value == "flight" else "火车票"
+                export_content.append("-" * 100)
+                export_content.append(f"查询ID: {seg_id}")
+                export_content.append(f"路线: {seg_result.from_city} {mode_icon} {seg_result.to_city}")
+                export_content.append(f"交通方式: {mode_name}")
+                export_content.append(f"查询日期: {seg_result.date}")
+                export_content.append(f"查询状态: {'✓ 成功' if seg_result.success else '✗ 失败'}")
+                if seg_result.error:
+                    export_content.append(f"错误信息: {seg_result.error}")
+                export_content.append(f"查询耗时: {seg_result.query_time:.2f}秒")
+                export_content.append("")
+                if seg_result.success and seg_result.data:
+                    export_content.append("查询结果数据:")
+                    export_content.append(seg_result.data)
+                else:
+                    export_content.append("（无数据）")
+                export_content.append("")
+
+            # 第二部分：所有组合路线方案
+            export_content.append("")
+            export_content.append("=" * 100)
+            export_content.append("第二部分：所有组合路线方案")
+            export_content.append("=" * 100)
+            export_content.append("")
+
+            combined_routes = self.last_query_data.get("combined_routes", [])
+            export_content.append(f"共组合出 {len(combined_routes)} 条可行路线")
+            export_content.append("")
+
+            # 按段数分组
+            direct_routes = [r for r in combined_routes if r.total_legs == 1]
+            transfer_routes = [r for r in combined_routes if r.total_legs > 1]
+
+            # 直达方案
+            if direct_routes:
+                export_content.append("-" * 100)
+                export_content.append(f"2.1 直达方案（{len(direct_routes)} 条）")
+                export_content.append("-" * 100)
+                export_content.append("")
+
+                for i, route in enumerate(direct_routes, 1):
+                    seg = route.segments[0]
+                    mode_icon = "✈️" if seg.mode.value == "flight" else "🚄"
+                    mode_name = "机票" if seg.mode.value == "flight" else "火车票"
+                    export_content.append(f"方案 {i}: {route.description}")
+                    export_content.append(f"  交通方式: {mode_name}")
+                    export_content.append(f"  路线详情:")
+                    export_content.append(f"    {seg.from_city} {mode_icon} {seg.to_city} ({seg.date})")
+                    export_content.append(f"  查询数据:")
+                    if seg.data:
+                        # 缩进数据内容
+                        for line in seg.data.split('\n'):
+                            export_content.append(f"    {line}")
+                    export_content.append("")
+
+            # 中转方案
+            if transfer_routes:
+                export_content.append("")
+                export_content.append("-" * 100)
+                export_content.append(f"2.2 中转方案（{len(transfer_routes)} 条）")
+                export_content.append("-" * 100)
+                export_content.append("")
+
+                # 按中转城市分组
+                from collections import defaultdict
+                hub_groups = defaultdict(list)
+                for route in transfer_routes:
+                    hub = route.segments[0].to_city
+                    hub_groups[hub].append(route)
+
+                for hub, hub_routes in hub_groups.items():
+                    export_content.append(f"  经 {hub} 中转（{len(hub_routes)} 条）")
+                    export_content.append("")
+
+                    for i, route in enumerate(hub_routes, 1):
+                        export_content.append(f"    方案 {i}: {route.description}")
+                        for j, seg in enumerate(route.segments, 1):
+                            mode_icon = "✈️" if seg.mode.value == "flight" else "🚄"
+                            mode_name = "机票" if seg.mode.value == "flight" else "火车票"
+                            leg_name = "第一程" if j == 1 else "第二程"
+                            export_content.append(f"      {leg_name}: {seg.from_city} {mode_icon} {seg.to_city} ({mode_name}, {seg.date})")
+                            export_content.append(f"      查询数据:")
+                            if seg.data:
+                                for line in seg.data.split('\n')[:50]:  # 限制行数避免文件过大
+                                    export_content.append(f"        {line}")
+                                if len(seg.data.split('\n')) > 50:
+                                    export_content.append(f"        ... (数据过长，已截断)")
+                        export_content.append("")
+
+            # 说明部分
+            export_content.append("")
+            export_content.append("=" * 100)
             export_content.append("说明")
-            export_content.append("=" * 80)
-            export_content.append("1. 价格仅供参考，实际购票请以官方平台为准")
-            export_content.append("2. 火车票数据基于12306官方API（仅支持15天内查询）")
-            export_content.append("3. 机票数据来源于携程网站")
-            export_content.append("4. 中转方案已考虑最小换乘时间要求")
+            export_content.append("=" * 100)
+            export_content.append("1. 本文件包含所有原始查询数据，未经AI筛选和推荐")
+            export_content.append("2. 第一部分：所有单段查询的原始结果（包括成功和失败的）")
+            export_content.append("3. 第二部分：程序组合出的所有可行路线方案")
+            export_content.append("4. 价格仅供参考，实际购票请以官方平台为准")
+            export_content.append("5. 火车票数据基于12306官方API（仅支持15天内查询）")
+            export_content.append("6. 机票数据来源于携程网站")
+            export_content.append("7. 中转方案已考虑最小换乘时间要求")
             if self.config_manager.get("accommodation_enabled", True):
                 threshold = self.config_manager.get("accommodation_threshold", 6)
-                export_content.append(f"5. 住宿费用：中转等待≥{threshold}小时且跨夜间或≥12小时，自动加¥200")
+                export_content.append(f"8. 住宿费用：中转等待≥{threshold}小时且跨夜间或≥12小时，自动加¥200")
             export_content.append("")
-            export_content.append("导出时间: " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            export_content.append("=" * 80)
+            export_content.append("=" * 100)
 
             # 写入文件
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(export_content))
 
             # 显示成功消息
+            file_size = len('\n'.join(export_content))
             messagebox.showinfo(
                 "导出成功",
-                f"查询结果已成功导出到：\n{filepath}\n\n文件大小：{len('\n'.join(export_content))} 字符"
+                f"完整查询数据已成功导出到：\n{filepath}\n\n"
+                f"文件大小：{file_size:,} 字符\n"
+                f"单段查询：{len(segment_results)} 个\n"
+                f"组合方案：{len(combined_routes)} 条"
             )
-            self.log_message(f"[导出] 结果已导出到: {filepath}")
+            self.log_message(f"[导出] 完整数据已导出到: {filepath}")
 
         except Exception as e:
             messagebox.showerror("导出失败", f"导出文件时发生错误：\n{str(e)}")
@@ -1512,6 +1625,20 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda n=len(routes): self.log_message(f"[分段查询] 组合出 {n} 条可行路线"))
             self.after(0, lambda n=len(routes): self.append_result(f"\n\n🛤️ 组合出 {n} 条可行路线，正在让 AI 分析..."))
 
+            # 保存原始查询数据（用于导出）
+            self.last_query_data = {
+                "segment_results": results,  # 所有单段查询结果
+                "combined_routes": routes,  # 所有组合路线
+                "query_info": {  # 查询信息
+                    "origin": from_city,
+                    "destination": to_city,
+                    "date": date,
+                    "hub_cities": hub_cities,
+                    "transport": transport,
+                    "priority": self.priority_var.get(),
+                },
+            }
+
             # 构建给 AI 的汇总消息（使用程序计算结果）
             summary_message = engine.build_summary_for_ai(
                 origin=from_city,
@@ -1607,7 +1734,28 @@ class GoHomeApp(ctk.CTk):
 - ✈️→🚄：先飞机后高铁
 - 🚄→✈️：先高铁后飞机（往往比全飞机便宜！）
 - 🚄→🚄：全程火车中转
-{accommodation_section}"""
+{accommodation_section}
+
+【重要：推荐方案详情输出要求】
+当你推荐多个方案时（如最便宜、最快、性价比最高等），**必须为每一个推荐方案都列出完整的详细信息**：
+1. 每个推荐方案都要写明具体的航班号或车次号
+2. 每个推荐方案都要写明出发时间、到达时间
+3. 每个推荐方案都要写明价格详情
+4. 不要只写第一个推荐方案的详情，其他方案只写摘要，这是不可接受的
+5. 用户需要看到所有推荐方案的完整信息，以便做出选择
+
+示例格式：
+## 🏆 推荐方案一：最便宜方案
+- ✈️ CA1234: 10:00北京首都机场 → 12:30上海虹桥机场 | ¥500
+- 🚄 G1234: 14:00上海虹桥 → 18:00杭州东 | ¥100
+- 总价：¥600
+
+## 🏆 推荐方案二：最快方案
+- ✈️ MU5678: 09:00北京首都机场 → 13:30杭州萧山机场 | ¥800
+- 总价：¥800
+
+## 🏆 推荐方案三：性价比最高
+... （同样需要完整详情）"""
 
             messages = [
                 {"role": "system", "content": system_prompt},
