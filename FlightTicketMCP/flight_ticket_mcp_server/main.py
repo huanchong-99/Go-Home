@@ -164,18 +164,16 @@ def setup_logging(debug_mode):
         os.makedirs(log_dir)
 
     # 【新增】每次启动时清除旧日志文件
+    # 注意：不使用print输出，避免Windows GBK编码问题导致MCP连接失败
     try:
         if os.path.exists(log_file_path):
             os.remove(log_file_path)
-            print(f"✅ 已清除旧日志文件: {log_file_path}")
         if os.path.exists(log_error_file_path):
             os.remove(log_error_file_path)
-            print(f"✅ 已清除旧错误日志文件: {log_error_file_path}")
         if os.path.exists(log_debug_file_path):
             os.remove(log_debug_file_path)
-            print(f"✅ 已清除旧调试日志文件: {log_debug_file_path}")
-    except Exception as e:
-        print(f"⚠️ 清除旧日志时出错（可忽略）: {e}")
+    except Exception:
+        pass  # 忽略清除日志时的错误
 
     # 设置日志级别
     log_level_map = {

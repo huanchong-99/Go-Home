@@ -1117,7 +1117,21 @@ class TransferHubManager:
 
         elif route_type == RouteType.DOMESTIC_TO_SOUTHEAST_ASIA:
             # 国内→东南亚：华南门户 + 东南亚枢纽
-            domestic_hubs = strategy.get("recommended_domestic", [])
+            recommended_domestic = strategy.get("recommended_domestic", [])
+
+            # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+            if max_count > len(recommended_domestic):
+
+                all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                domestic_hubs = domestic_hubs[:max_count]
+
+            else:
+
+                domestic_hubs = recommended_domestic[:max_count]
 
             # 【修改】根据use_international_hubs决定是否使用国际枢纽
             if use_international_hubs:
@@ -1135,7 +1149,21 @@ class TransferHubManager:
 
         elif route_type == RouteType.DOMESTIC_TO_EAST_ASIA:
             # 国内→东亚：华东/华北门户 + 亚洲枢纽
-            domestic_hubs = strategy.get("recommended_domestic", [])
+            recommended_domestic = strategy.get("recommended_domestic", [])
+
+            # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+            if max_count > len(recommended_domestic):
+
+                all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                domestic_hubs = domestic_hubs[:max_count]
+
+            else:
+
+                domestic_hubs = recommended_domestic[:max_count]
 
             # 【修改】根据use_international_hubs决定是否使用国际枢纽
             if use_international_hubs:
@@ -1164,13 +1192,41 @@ class TransferHubManager:
                 tip_message = f"国内→远程国际，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
             else:
                 # 仅使用国内枢纽
-                domestic_hubs = strategy.get("recommended_domestic", [])
+                recommended_domestic = strategy.get("recommended_domestic", [])
+
+                # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+                if max_count > len(recommended_domestic):
+
+                    all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                    domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                    domestic_hubs = domestic_hubs[:max_count]
+
+                else:
+
+                    domestic_hubs = recommended_domestic[:max_count]
                 hubs = domestic_hubs[:max_count]
                 tip_message = f"国内→远程国际（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.SOUTHEAST_ASIA_TO_DOMESTIC:
             # 东南亚→国内：东南亚枢纽 + 亚洲门户 + 国内门户
-            domestic_hubs = strategy.get("recommended_domestic", [])
+            recommended_domestic = strategy.get("recommended_domestic", [])
+
+            # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+            if max_count > len(recommended_domestic):
+
+                all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                domestic_hubs = domestic_hubs[:max_count]
+
+            else:
+
+                domestic_hubs = recommended_domestic[:max_count]
 
             # 【修改】根据use_international_hubs决定是否使用国际枢纽
             if use_international_hubs:
@@ -1188,7 +1244,21 @@ class TransferHubManager:
 
         elif route_type == RouteType.EAST_ASIA_TO_DOMESTIC:
             # 东亚→国内：亚洲门户 + 国内门户
-            domestic_hubs = strategy.get("recommended_domestic", [])
+            recommended_domestic = strategy.get("recommended_domestic", [])
+
+            # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+            if max_count > len(recommended_domestic):
+
+                all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                domestic_hubs = domestic_hubs[:max_count]
+
+            else:
+
+                domestic_hubs = recommended_domestic[:max_count]
 
             # 【修改】根据use_international_hubs决定是否使用国际枢纽
             if use_international_hubs:
@@ -1206,7 +1276,21 @@ class TransferHubManager:
 
         elif route_type == RouteType.INTERNATIONAL_TO_DOMESTIC:
             # 远程国际→国内：全球枢纽 + 国内大门户
-            domestic_hubs = strategy.get("recommended_domestic", [])
+            recommended_domestic = strategy.get("recommended_domestic", [])
+
+            # 【修复】如果max_count大于推荐列表，扩展到所有国内枢纽
+
+            if max_count > len(recommended_domestic):
+
+                all_domestic = self.get_recommended_transfer_cities("all", max_count)
+
+                domestic_hubs = recommended_domestic + [c for c in all_domestic if c not in recommended_domestic]
+
+                domestic_hubs = domestic_hubs[:max_count]
+
+            else:
+
+                domestic_hubs = recommended_domestic[:max_count]
 
             # 【修改】根据use_international_hubs决定是否使用国际枢纽
             if use_international_hubs:

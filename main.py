@@ -574,6 +574,7 @@ class GoHomeApp(ctk.CTk):
             variable=self.international_hub_var,
             onvalue="on",
             offvalue="off",
+            command=self.on_international_hub_changed,  # 添加监听
             font=ctk.CTkFont(size=13)
         )
         self.international_hub_switch.grid(row=2, column=0, padx=10, pady=5, sticky="w")
@@ -587,50 +588,41 @@ class GoHomeApp(ctk.CTk):
         )
         self.international_hub_tip.grid(row=3, column=0, padx=30, pady=(0, 5), sticky="w")
 
-        # 中转枢纽数量选择
-        self.hub_count_frame = ctk.CTkFrame(
+        # 查询策略选择（替代原来的枢纽数量）
+        self.hub_strategy_frame = ctk.CTkFrame(
             self.hub_mode_frame,
             fg_color="transparent"
         )
-        self.hub_count_frame.grid(row=4, column=0, padx=10, pady=5)
+        self.hub_strategy_frame.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
 
-        self.hub_count_label = ctk.CTkLabel(
-            self.hub_count_frame,
-            text="枢纽数量:",
+        self.hub_strategy_label = ctk.CTkLabel(
+            self.hub_strategy_frame,
+            text="查询策略:",
             font=ctk.CTkFont(size=12)
         )
-        self.hub_count_label.grid(row=0, column=0, padx=(0, 5))
+        self.hub_strategy_label.grid(row=0, column=0, padx=(0, 5))
 
-        # 枢纽数量选项：8个(快速)、20个(推荐)、44个(国内全面)、70个(国际全面)
-        self.hub_count_var = ctk.StringVar(value="20")
-        self.hub_count_menu = ctk.CTkOptionMenu(
-            self.hub_count_frame,
-            variable=self.hub_count_var,
-            values=["8", "20", "44", "70"],
-            width=60,
+        # 查询策略选项：快速/推荐/全面，根据国际节点开关显示不同数量
+        self.hub_strategy_var = ctk.StringVar(value="推荐(15个)")
+        self.hub_strategy_menu = ctk.CTkOptionMenu(
+            self.hub_strategy_frame,
+            variable=self.hub_strategy_var,
+            values=["快速(8个)", "推荐(15个)", "全面(39个)"],
+            width=110,
             height=28,
             font=ctk.CTkFont(size=12),
-            command=self.on_hub_count_changed
+            command=self.on_hub_strategy_changed
         )
-        self.hub_count_menu.grid(row=0, column=1, padx=5)
+        self.hub_strategy_menu.grid(row=0, column=1, padx=5)
 
         # 预计时间提示
         self.hub_time_label = ctk.CTkLabel(
-            self.hub_count_frame,
-            text="≈20-40分钟",
+            self.hub_strategy_frame,
+            text="≈15-23分钟",
             font=ctk.CTkFont(size=11),
             text_color="orange"
         )
         self.hub_time_label.grid(row=0, column=2, padx=(5, 0))
-
-        # 枢纽选择提示
-        self.hub_tip_label = ctk.CTkLabel(
-            self.hub_mode_frame,
-            text="💡 国内选44个 | 国际选70个",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        self.hub_tip_label.grid(row=3, column=0, padx=10, pady=(0, 5))
 
         # 中转模式状态提示（默认显示枢纽模式已开启）
         self.hub_mode_status = ctk.CTkLabel(
@@ -639,7 +631,7 @@ class GoHomeApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color="green"
         )
-        self.hub_mode_status.grid(row=4, column=0, padx=10, pady=(0, 10))
+        self.hub_mode_status.grid(row=5, column=0, padx=10, pady=(0, 10))
 
         # 住宿费用设置区 - 使用卡片样式
         self.accommodation_frame = ctk.CTkFrame(
@@ -1420,10 +1412,16 @@ class GoHomeApp(ctk.CTk):
         """
         transport = self.transport_var.get()
 
-        # 获取用户选择的中转枢纽数量
-        hub_count = int(self.hub_count_var.get())
+        # 【修改】从查询策略中提取枢纽数量（如"推荐(30个)" → 30）
+        import re
+        strategy_value = self.hub_strategy_var.get()
+        match = re.search(r'\((\d+)个\)', strategy_value)
+        if match:
+            hub_count = int(match.group(1))
+        else:
+            hub_count = 15  # 默认值
 
-        # 【新增】获取国际节点查询开关状态
+        # 获取国际节点查询开关状态
         use_international_hubs = self.international_hub_var.get() == "on"
 
         # 使用智能枢纽选择（根据路线类型自动选择合适的枢纽）
@@ -2058,20 +2056,67 @@ class GoHomeApp(ctk.CTk):
             )
             self.log_message("[模式] 已切换回标准模式")
 
-    def on_hub_count_changed(self, value: str):
-        """枢纽数量选择变化时更新时间提示"""
-        time_estimates = {
-            "8": ("≈10-15分钟", "green"),
-            "20": ("≈20-40分钟", "orange"),
-            "44": ("≈50-90分钟", "red"),
-            "70": ("≈90-150分钟", "red")  # 国际航线全面查询
-        }
-        time_text, color = time_estimates.get(value, ("≈20-40分钟", "orange"))
+    def on_international_hub_changed(self):
+        """国际节点开关变化时，动态更新策略选项"""
+        is_enabled = self.international_hub_var.get() == "on"
+
+        # 获取当前选择的策略档位（快速/推荐/全面）
+        current_value = self.hub_strategy_var.get()
+        if "快速" in current_value:
+            level = "fast"
+        elif "推荐" in current_value:
+            level = "recommend"
+        else:
+            level = "full"
+
+        if is_enabled:
+            # 国际节点开启：使用国际数量
+            new_values = ["快速(15个)", "推荐(30个)", "全面(73个)"]
+            level_map = {"fast": "快速(15个)", "recommend": "推荐(30个)", "full": "全面(73个)"}
+        else:
+            # 国际节点关闭：使用国内数量
+            new_values = ["快速(8个)", "推荐(15个)", "全面(39个)"]
+            level_map = {"fast": "快速(8个)", "recommend": "推荐(15个)", "full": "全面(39个)"}
+
+        # 更新下拉框选项
+        self.hub_strategy_menu.configure(values=new_values)
+
+        # 保持当前档位，更新数字
+        self.hub_strategy_var.set(level_map[level])
+
+        # 更新时间预估
+        self.on_hub_strategy_changed(level_map[level])
+
+        # 记录日志
+        status = "已启用" if is_enabled else "已关闭"
+        self.log_message(f"[国际节点] {status}国际节点查询")
+
+    def on_hub_strategy_changed(self, value: str):
+        """查询策略变化时更新时间提示"""
+        # 从选项中提取数字（如"推荐(30个)" → 30）
+        import re
+        match = re.search(r'\((\d+)个\)', value)
+        if match:
+            count = int(match.group(1))
+        else:
+            count = 15  # 默认值
+
+        # 根据枢纽数量计算预估时间
+        if count <= 10:
+            time_text = f"≈{count}-{int(count*1.5)}分钟"
+            color = "green"
+        elif count <= 30:
+            time_text = f"≈{count}-{int(count*1.5)}分钟"
+            color = "orange"
+        else:
+            time_text = f"≈{count}-{int(count*1.5)}分钟"
+            color = "red"
+
         self.hub_time_label.configure(text=time_text, text_color=color)
 
         # 如果已启用中转模式，记录日志
         if self.transfer_hub_mode:
-            self.log_message(f"[模式] 枢纽数量已调整为 {value} 个，预计耗时 {time_text}")
+            self.log_message(f"[查询策略] 已调整为 {value}，预计耗时 {time_text}")
 
     def change_theme(self, theme: str):
         """切换主题"""
