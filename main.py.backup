@@ -563,36 +563,15 @@ class GoHomeApp(ctk.CTk):
             command=self.toggle_transfer_hub_mode,
             font=ctk.CTkFont(size=13)
         )
-        self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.hub_mode_switch.grid(row=1, column=0, padx=10, pady=5)
         self.hub_mode_switch.select()  # 默认选中
-
-        # 【新增】国际节点查询开关（默认关闭）
-        self.international_hub_var = ctk.StringVar(value="off")
-        self.international_hub_switch = ctk.CTkSwitch(
-            self.hub_mode_frame,
-            text="启用国际节点查询",
-            variable=self.international_hub_var,
-            onvalue="on",
-            offvalue="off",
-            font=ctk.CTkFont(size=13)
-        )
-        self.international_hub_switch.grid(row=2, column=0, padx=10, pady=5, sticky="w")
-
-        # 添加提示标签
-        self.international_hub_tip = ctk.CTkLabel(
-            self.hub_mode_frame,
-            text="💡 关闭时：国内→国外仅用国内枢纽中转",
-            font=ctk.CTkFont(size=11),
-            text_color="gray"
-        )
-        self.international_hub_tip.grid(row=3, column=0, padx=30, pady=(0, 5), sticky="w")
 
         # 中转枢纽数量选择
         self.hub_count_frame = ctk.CTkFrame(
             self.hub_mode_frame,
             fg_color="transparent"
         )
-        self.hub_count_frame.grid(row=4, column=0, padx=10, pady=5)
+        self.hub_count_frame.grid(row=2, column=0, padx=10, pady=5)
 
         self.hub_count_label = ctk.CTkLabel(
             self.hub_count_frame,
@@ -1137,9 +1116,9 @@ class GoHomeApp(ctk.CTk):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # 从查询信息中提取出发地和目的地
-        origin = self.from_city_entry.get().strip() if self.from_city_entry.get() else "未知"
-        destination = self.to_city_entry.get().strip() if self.to_city_entry.get() else "未知"
-        date = self.date_entry.get() if hasattr(self, 'date_entry') else "未知"
+        origin = self.from_var.get().strip()
+        destination = self.to_var.get().strip()
+        date = self.date_entry.get()
 
         default_filename = f"Go-home_查询结果_{origin}到{destination}_{date}_{timestamp}.txt"
 
@@ -1423,13 +1402,9 @@ class GoHomeApp(ctk.CTk):
         # 获取用户选择的中转枢纽数量
         hub_count = int(self.hub_count_var.get())
 
-        # 【新增】获取国际节点查询开关状态
-        use_international_hubs = self.international_hub_var.get() == "on"
-
         # 使用智能枢纽选择（根据路线类型自动选择合适的枢纽）
         hub_cities, route_type, tip_message = hub_manager.get_hubs_for_route(
-            from_city, to_city, max_count=hub_count, transport_type=transport,
-            use_international_hubs=use_international_hubs
+            from_city, to_city, max_count=hub_count, transport_type=transport
         )
 
         # 获取路线类型描述
@@ -1844,63 +1819,10 @@ class GoHomeApp(ctk.CTk):
             self.after(0, lambda: self.query_btn.configure(state="normal", text="🔍 开始查询"))
             self.is_querying = False
 
-    def clear_browser_cookies(self):
-        """清除浏览器cookie数据"""
-        import shutil
-        import time
-        import subprocess
-
-        # 确定browser_data目录位置
-        browser_data_dir = os.path.join(PROJECT_ROOT, "FlightTicketMCP", "browser_data")
-
-        if os.path.exists(browser_data_dir):
-            try:
-                self.log_message(f"正在清除浏览器cookie: {browser_data_dir}")
-
-                # 【关键修复】先杀掉所有 Chrome/Edge 进程，释放文件锁
-                self.log_message("正在关闭所有浏览器进程以释放文件锁...")
-                try:
-                    # 尝试杀掉 Chrome 进程
-                    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"],
-                                   capture_output=True, timeout=5)
-                    subprocess.run(["taskkill", "/F", "/IM", "msedge.exe", "/T"],
-                                   capture_output=True, timeout=5)
-                    subprocess.run(["taskkill", "/F", "/IM", "chromium.exe", "/T"],
-                                   capture_output=True, timeout=5)
-                    time.sleep(1)  # 等待进程完全退出
-                    self.log_message("✅ 浏览器进程已关闭")
-                except Exception as kill_error:
-                    self.log_message(f"⚠️ 关闭浏览器进程时出现错误（可忽略）: {kill_error}")
-
-                # 现在可以安全删除目录
-                shutil.rmtree(browser_data_dir)
-                time.sleep(0.5)  # 等待文件系统同步
-                self.log_message("✅ 浏览器cookie已清除")
-                return True
-            except Exception as e:
-                self.log_message(f"❌ 清除cookie失败: {e}")
-                self.log_message("💡 提示: 请手动关闭所有浏览器窗口后重试")
-                return False
-        else:
-            self.log_message("ℹ️ 未找到browser_data目录，跳过清除")
-            return True
-
     def start_all_services(self):
         """一键启动所有服务"""
         self.log_message("-" * 50)
         self.log_message("正在启动 MCP 服务...")
-
-        # 询问是否清除旧的cookie
-        response = messagebox.askyesno(
-            "清除Cookie",
-            "是否清除旧的浏览器Cookie?\n\n"
-            "如果上次查询出现验证码问题或所有查询都超时，\n"
-            "建议清除cookie重新验证。\n\n"
-            "⚠️ 清除后首次查询可能需要重新完成验证码。"
-        )
-
-        if response:
-            self.clear_browser_cookies()
 
         def start_services():
             # 启动机票服务

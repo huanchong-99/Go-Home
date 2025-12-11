@@ -1075,7 +1075,8 @@ class TransferHubManager:
         from_city: str,
         to_city: str,
         max_count: int = 15,
-        transport_type: str = "all"
+        transport_type: str = "all",
+        use_international_hubs: bool = True
     ) -> Tuple[List[str], RouteType, str]:
         """
         根据路线智能选择中转枢纽城市
@@ -1088,6 +1089,7 @@ class TransferHubManager:
             to_city: 目的城市
             max_count: 最大返回数量
             transport_type: 交通类型 ("all", "flight", "train")
+            use_international_hubs: 是否使用国际枢纽（国内→国外路线时有效）
 
         Returns:
             Tuple[List[str], RouteType, str]:
@@ -1116,73 +1118,110 @@ class TransferHubManager:
         elif route_type == RouteType.DOMESTIC_TO_SOUTHEAST_ASIA:
             # 国内→东南亚：华南门户 + 东南亚枢纽
             domestic_hubs = strategy.get("recommended_domestic", [])
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
 
-            # 去重并合并
-            hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
-            hubs = hubs[:max_count]
-            tip_message = f"国内→东南亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个东南亚枢纽"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                # 去重并合并
+                hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
+                hubs = hubs[:max_count]
+                tip_message = f"国内→东南亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个东南亚枢纽"
+            else:
+                # 仅使用国内枢纽
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"国内→东南亚（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.DOMESTIC_TO_EAST_ASIA:
             # 国内→东亚：华东/华北门户 + 亚洲枢纽
             domestic_hubs = strategy.get("recommended_domestic", [])
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
 
-            hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
-            hubs = hubs[:max_count]
-            tip_message = f"国内→东亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个亚洲枢纽"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                hubs = domestic_hubs + [h for h in intl_hubs if h not in domestic_hubs]
+                hubs = hubs[:max_count]
+                tip_message = f"国内→东亚，使用 {len(domestic_hubs)} 个国内门户 + {len(intl_hubs)} 个亚洲枢纽"
+            else:
+                # 仅使用国内枢纽
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"国内→东亚（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.DOMESTIC_TO_LONG_HAUL:
             # 国内→远程国际（欧美等）：使用全球主要枢纽
-            # 优先从所有 hub_groups 收集（已扩展到73个枢纽）
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
-            # 去重保序
-            hubs = list(dict.fromkeys(intl_hubs))[:max_count]
-            total_available = len(list(dict.fromkeys(intl_hubs)))
-            tip_message = f"国内→远程国际，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                # 优先从所有 hub_groups 收集（已扩展到73个枢纽）
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                # 去重保序
+                hubs = list(dict.fromkeys(intl_hubs))[:max_count]
+                total_available = len(list(dict.fromkeys(intl_hubs)))
+                tip_message = f"国内→远程国际，共有 {total_available} 个全球枢纽可用，已选择 {len(hubs)} 个"
+            else:
+                # 仅使用国内枢纽
+                domestic_hubs = strategy.get("recommended_domestic", [])
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"国内→远程国际（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.SOUTHEAST_ASIA_TO_DOMESTIC:
             # 东南亚→国内：东南亚枢纽 + 亚洲门户 + 国内门户
             domestic_hubs = strategy.get("recommended_domestic", [])
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
 
-            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
-            hubs = list(dict.fromkeys(all_hubs))[:max_count]
-            total_available = len(list(dict.fromkeys(all_hubs)))
-            tip_message = f"东南亚→国内，共有 {total_available} 个枢纽可用（东南亚+亚洲+国内门户），已选择 {len(hubs)} 个"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+                hubs = list(dict.fromkeys(all_hubs))[:max_count]
+                total_available = len(list(dict.fromkeys(all_hubs)))
+                tip_message = f"东南亚→国内，共有 {total_available} 个枢纽可用（东南亚+亚洲+国内门户），已选择 {len(hubs)} 个"
+            else:
+                # 仅使用国内枢纽
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"东南亚→国内（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.EAST_ASIA_TO_DOMESTIC:
             # 东亚→国内：亚洲门户 + 国内门户
             domestic_hubs = strategy.get("recommended_domestic", [])
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
 
-            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
-            hubs = list(dict.fromkeys(all_hubs))[:max_count]
-            total_available = len(list(dict.fromkeys(all_hubs)))
-            tip_message = f"东亚→国内，共有 {total_available} 个枢纽可用（亚洲+国内门户），已选择 {len(hubs)} 个"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+                hubs = list(dict.fromkeys(all_hubs))[:max_count]
+                total_available = len(list(dict.fromkeys(all_hubs)))
+                tip_message = f"东亚→国内，共有 {total_available} 个枢纽可用（亚洲+国内门户），已选择 {len(hubs)} 个"
+            else:
+                # 仅使用国内枢纽
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"东亚→国内（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.INTERNATIONAL_TO_DOMESTIC:
             # 远程国际→国内：全球枢纽 + 国内大门户
             domestic_hubs = strategy.get("recommended_domestic", [])
-            intl_hubs = []
-            for group in strategy.get("hub_groups", []):
-                intl_hubs.extend(self.international_hubs.get(group, []))
 
-            # 合并国际枢纽和国内门户
-            all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
-            hubs = list(dict.fromkeys(all_hubs))[:max_count]
-            total_available = len(list(dict.fromkeys(all_hubs)))
-            tip_message = f"远程国际→国内，共有 {total_available} 个枢纽可用（全球枢纽+国内门户），已选择 {len(hubs)} 个"
+            # 【修改】根据use_international_hubs决定是否使用国际枢纽
+            if use_international_hubs:
+                intl_hubs = []
+                for group in strategy.get("hub_groups", []):
+                    intl_hubs.extend(self.international_hubs.get(group, []))
+                # 合并国际枢纽和国内门户
+                all_hubs = intl_hubs + [h for h in domestic_hubs if h not in intl_hubs]
+                hubs = list(dict.fromkeys(all_hubs))[:max_count]
+                total_available = len(list(dict.fromkeys(all_hubs)))
+                tip_message = f"远程国际→国内，共有 {total_available} 个枢纽可用（全球枢纽+国内门户），已选择 {len(hubs)} 个"
+            else:
+                # 仅使用国内枢纽
+                hubs = domestic_hubs[:max_count]
+                tip_message = f"远程国际→国内（仅国内中转），使用 {len(hubs)} 个国内门户"
 
         elif route_type == RouteType.INTERNATIONAL:
             # 国际→国际：使用全球所有主要枢纽

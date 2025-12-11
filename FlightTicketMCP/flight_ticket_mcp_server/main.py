@@ -162,7 +162,21 @@ def setup_logging(debug_mode):
     log_dir = os.path.dirname(log_file_path)
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    
+
+    # 【新增】每次启动时清除旧日志文件
+    try:
+        if os.path.exists(log_file_path):
+            os.remove(log_file_path)
+            print(f"✅ 已清除旧日志文件: {log_file_path}")
+        if os.path.exists(log_error_file_path):
+            os.remove(log_error_file_path)
+            print(f"✅ 已清除旧错误日志文件: {log_error_file_path}")
+        if os.path.exists(log_debug_file_path):
+            os.remove(log_debug_file_path)
+            print(f"✅ 已清除旧调试日志文件: {log_debug_file_path}")
+    except Exception as e:
+        print(f"⚠️ 清除旧日志时出错（可忽略）: {e}")
+
     # 设置日志级别
     log_level_map = {
         'DEBUG': logging.DEBUG,

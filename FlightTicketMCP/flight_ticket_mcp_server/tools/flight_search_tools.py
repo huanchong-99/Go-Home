@@ -310,13 +310,25 @@ class FlightRouteSearcher:
             try:
                 self.page = ChromiumPage(co)
             except Exception as browser_error:
+                error_msg = str(browser_error).lower()
                 logger.error(f"创建浏览器实例失败: {browser_error}")
-                logger.info("尝试使用默认配置创建浏览器...")
+
+                # 检测是否是文件锁问题
+                if 'lock' in error_msg or 'singleton' in error_msg or 'in use' in error_msg:
+                    logger.warning("检测到浏览器用户数据目录被锁定！")
+                    logger.warning("可能的原因：")
+                    logger.warning("  1. 有其他 Chrome/Edge 进程正在使用该目录")
+                    logger.warning("  2. 上次浏览器崩溃，留下了锁文件")
+                    logger.warning("建议操作：")
+                    logger.warning("  1. 在主界面点击「启动服务」时选择「清除Cookie」")
+                    logger.warning("  2. 或手动关闭所有 Chrome/Edge 进程后重试")
+
+                logger.info("尝试使用默认配置创建浏览器（不使用用户数据目录）...")
 
                 # 尝试不使用用户数据目录
                 co_fallback = create_browser_options(self.headless, use_user_data=False)
                 self.page = ChromiumPage(co_fallback)
-                logger.warning("使用默认配置创建浏览器成功（Cookie 将不会被保存）")
+                logger.warning("使用默认配置创建浏览器成功（Cookie 将不会被保存，可能需要重新验证）")
 
             # 添加随机延迟，模拟真实用户行为
             delay = random.uniform(0.5, 1.5)
@@ -510,6 +522,50 @@ class FlightRouteSearcher:
         """
         needs_action, _ = self._detect_captcha_or_login()
         return needs_action
+
+    def _check_page_abnormal(self):
+        """
+        检查页面是否异常（验证码、无航班提示、错误页面等）
+        如果发现异常，记录详细日志
+        """
+        try:
+            page_text = self.page.html.lower()
+
+            # 检查验证码
+            captcha_keywords = ['验证', 'verify', 'captcha', '滑动', '安全验证', '人机验证']
+            for keyword in captcha_keywords:
+                if keyword in page_text:
+                    logger.warning(f"⚠️ 页面检测到验证码关键字: {keyword}")
+                    logger.warning("💡 建议：下次启动时选择「清除Cookie」，首次查询会弹出浏览器让您手动验证")
+                    return
+
+            # 检查无航班提示
+            no_flight_keywords = ['暂无航班', '没有找到', '未找到航班', 'no flight', '无搜索结果']
+            for keyword in no_flight_keywords:
+                if keyword in page_text:
+                    logger.info(f"ℹ️ 页面提示: {keyword}（可能该航线确实无航班）")
+                    return
+
+            # 检查登录要求
+            login_keywords = ['请登录', '立即登录', '登录后', 'sign in', 'login']
+            for keyword in login_keywords:
+                if keyword in page_text:
+                    logger.warning(f"⚠️ 页面要求登录: {keyword}")
+                    return
+
+            # 检查错误页面
+            error_keywords = ['页面不存在', '404', '500', '系统错误', 'error', '访问受限']
+            for keyword in error_keywords:
+                if keyword in page_text:
+                    logger.error(f"❌ 页面错误: {keyword}")
+                    return
+
+            # 未找到明确原因
+            logger.warning("❓ 未找到航班，且无法确定具体原因")
+            logger.info(f"当前页面URL: {self.page.url}")
+
+        except Exception as e:
+            logger.debug(f"页面异常检查出错: {e}")
 
     def _create_new_browser_for_captcha(self, url: str, action_type: str = 'captcha'):
         """
@@ -745,12 +801,16 @@ class FlightRouteSearcher:
             flight_list = self.page.ele('css:.body-wrapper')
             if not flight_list:
                 logger.warning("未找到航班容器")
+                # 【增强】检查是否遇到异常页面
+                self._check_page_abnormal()
                 return []
 
             # 查找航班项
             flight_containers = flight_list.eles('css:.flight-item')
             if not flight_containers:
                 logger.warning("未找到航班项")
+                # 【增强】检查是否遇到异常页面（验证码、无航班提示等）
+                self._check_page_abnormal()
                 return []
 
             logger.info(f"找到 {len(flight_containers)} 个航班容器")

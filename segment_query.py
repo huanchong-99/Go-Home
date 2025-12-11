@@ -231,7 +231,8 @@ class SegmentQueryEngine:
         origin: str,
         destination: str,
         max_count: int = 15,
-        transport_type: str = "all"
+        transport_type: str = "all",
+        use_international_hubs: bool = True
     ) -> Tuple[List[str], RouteType, str]:
         """
         智能获取中转枢纽城市
@@ -243,6 +244,7 @@ class SegmentQueryEngine:
             destination: 目的城市
             max_count: 最大枢纽数量
             transport_type: 交通方式 ("all", "flight", "train")
+            use_international_hubs: 是否使用国际枢纽（国内↔国外路线时有效）
 
         Returns:
             Tuple[List[str], RouteType, str]:
@@ -251,7 +253,7 @@ class SegmentQueryEngine:
                 - 提示信息（用于UI显示）
         """
         hubs, route_type, tip = hub_manager.get_hubs_for_route(
-            origin, destination, max_count, transport_type
+            origin, destination, max_count, transport_type, use_international_hubs
         )
 
         # 缓存路线信息
@@ -422,22 +424,60 @@ class SegmentQueryEngine:
                     result.error = "机票服务未启动"
                     return result
 
-                data = self.mcp_manager.call_tool(
-                    "flight_searchFlightRoutes",
-                    {
-                        "departure_city": query.from_city,
-                        "destination_city": query.to_city,
-                        "departure_date": query.date
-                    }
-                )
-                result.data = data
+                # 【新增】航班查询失败自动重试机制（最多重试2次）
+                max_retries = 2
+                retry_count = 0
+                data = None
 
-                # 检查返回的数据是否有效
-                if self._is_valid_response(data):
-                    result.success = True
-                else:
-                    result.success = False
-                    result.error = "查询失败或超时"
+                while retry_count <= max_retries:
+                    if retry_count > 0:
+                        self.log(f"[✈️ {query.from_city}→{query.to_city}] 第{retry_count}次重试...")
+
+                    # 【修复】使用更长的超时时间（120秒），给浏览器足够时间处理反爬机制
+                    data = self.mcp_manager.call_tool(
+                        "flight_searchFlightRoutes",
+                        {
+                            "departure_city": query.from_city,
+                            "destination_city": query.to_city,
+                            "departure_date": query.date
+                        },
+                        timeout=120  # 增加到120秒
+                    )
+
+                    # 检查返回的数据是否有效
+                    if self._is_valid_response(data):
+                        # 进一步检查：确保不是返回0条航班
+                        if "找到 0 条航班" not in data and "0条航班" not in data:
+                            result.success = True
+                            result.data = data
+                            if retry_count > 0:
+                                self.log(f"[✈️ {query.from_city}→{query.to_city}] ✅ 重试成功")
+                            break
+                        else:
+                            # 返回0条航班，可能是反爬或页面问题，尝试重试
+                            if retry_count < max_retries:
+                                self.log(f"[✈️ {query.from_city}→{query.to_city}] ⚠️ 返回0条航班，将重试...")
+                                retry_count += 1
+                                continue
+                            else:
+                                # 已达到最大重试次数
+                                result.success = False
+                                result.data = data
+                                result.error = "查询返回0条航班（已重试2次）"
+                                self.log(f"[✈️ {query.from_city}→{query.to_city}] ❌ 重试{max_retries}次后仍返回0条航班")
+                                break
+                    else:
+                        # 查询失败或超时
+                        if retry_count < max_retries:
+                            self.log(f"[✈️ {query.from_city}→{query.to_city}] ⚠️ 查询失败，将重试...")
+                            retry_count += 1
+                            continue
+                        else:
+                            result.success = False
+                            result.data = data
+                            result.error = "查询失败或超时（已重试2次）"
+                            self.log(f"[✈️ {query.from_city}→{query.to_city}] ❌ 重试{max_retries}次后仍失败")
+                            break
 
             elif query.mode == TransportMode.TRAIN:
                 # 查询火车票
