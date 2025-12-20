@@ -499,22 +499,43 @@ class SegmentQueryEngine:
                 # 使用火车票日期（可能因12306限制而调整）
                 use_date = train_date or query.date
 
-                data = self.mcp_manager.call_tool(
-                    "train_get-tickets",
-                    {
-                        "date": use_date,
-                        "fromStation": from_station,
-                        "toStation": to_station
-                    }
-                )
-                result.data = data
+                # 【新增】火车票查询失败自动重试机制（最多重试2次，共3次尝试）
+                max_retries = 2
+                retry_count = 0
+                data = None
 
-                # 检查返回的数据是否有效
-                if self._is_valid_response(data):
-                    result.success = True
-                else:
-                    result.success = False
-                    result.error = "查询失败或超时"
+                while retry_count <= max_retries:
+                    if retry_count > 0:
+                        self.log(f"[🚄 {query.from_city}→{query.to_city}] 第{retry_count}次重试...")
+
+                    data = self.mcp_manager.call_tool(
+                        "train_get-tickets",
+                        {
+                            "date": use_date,
+                            "fromStation": from_station,
+                            "toStation": to_station
+                        }
+                    )
+
+                    # 检查返回的数据是否有效
+                    if self._is_valid_response(data):
+                        result.success = True
+                        result.data = data
+                        if retry_count > 0:
+                            self.log(f"[🚄 {query.from_city}→{query.to_city}] ✅ 重试成功")
+                        break
+                    else:
+                        # 查询失败或超时
+                        if retry_count < max_retries:
+                            self.log(f"[🚄 {query.from_city}→{query.to_city}] ⚠️ 查询失败，将重试...")
+                            retry_count += 1
+                            continue
+                        else:
+                            result.success = False
+                            result.data = data
+                            result.error = "查询失败或超时（已重试2次）"
+                            self.log(f"[🚄 {query.from_city}→{query.to_city}] ❌ 重试{max_retries}次后仍失败")
+                            break
 
         except Exception as e:
             result.error = str(e)
