@@ -764,6 +764,8 @@ async function make12306Request<T>(
     try {
         const response = await axios.get(url + '?' + scheme.toString(), {
             headers: headers,
+            timeout: 120000,  // 120秒超时（12306 加载较慢）
+            family: 4,  // 强制使用 IPv4，避免 IPv6 连接超时
         });
         return (await response.data) as T;
     } catch (error) {
